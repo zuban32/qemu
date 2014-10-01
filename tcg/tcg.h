@@ -496,6 +496,7 @@ struct TCGContext {
     tcg_insn_unit *code_ptr;
     TCGTemp temps[TCG_MAX_TEMPS]; /* globals first, temps after */
     TCGTempSet free_temps[TCG_TYPE_COUNT * 2];
+    TCGv_ptr cpu_env; /* used to access memory locations for vector globals */
 
     GHashTable *helpers;
 
