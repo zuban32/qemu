@@ -1808,6 +1808,16 @@ static inline void tcg_gen_discard_i64(TCGv_i64 arg)
 #endif
 }
 
+static inline void tcg_gen_discard_v128(TCGv_v128 arg)
+{
+    tcg_gen_op1_v128(INDEX_op_discard, arg);
+}
+
+static inline void tcg_gen_sync_temp_v128(TCGv_v128 arg)
+{
+    tcg_gen_op1_v128(INDEX_op_sync_temp, arg);
+}
+
 static inline void tcg_gen_andc_i32(TCGv_i32 ret, TCGv_i32 arg1, TCGv_i32 arg2)
 {
     if (TCG_TARGET_HAS_andc_i32) {

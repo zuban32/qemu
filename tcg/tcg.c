@@ -1553,6 +1553,11 @@ static void tcg_liveness_analysis(TCGContext *s)
             dead_temps[args[0]] = 1;
             mem_temps[args[0]] = 0;
             break;
+        case INDEX_op_sync_temp:
+            args--;
+            dead_temps[args[0]] = 1;
+            mem_temps[args[0]] = 1;
+            break;
         case INDEX_op_end:
             break;
 
@@ -2526,6 +2531,13 @@ static inline int tcg_gen_code_common(TCGContext *s,
             goto next;
         case INDEX_op_discard:
             temp_dead(s, args[0]);
+            break;
+        case INDEX_op_sync_temp:
+            /* We use it only for globals currently. */
+            assert(args[0] < s->nb_globals);
+            if (s->temps[args[0]].val_type == TEMP_VAL_REG) {
+                tcg_reg_free(s, s->temps[args[0]].reg);
+            }
             break;
         case INDEX_op_set_label:
             tcg_reg_alloc_bb_end(s, s->reserved_regs);
