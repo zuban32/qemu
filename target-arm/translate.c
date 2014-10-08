@@ -5239,6 +5239,18 @@ static int disas_neon_data_insn(CPUARMState * env, DisasContext *s, uint32_t ins
             return 1;
         }
 
+        /* Use vector ops to handle what we can */
+        switch (op) {
+            case NEON_3R_VADD_VSUB:
+                if (!u && size == 2) {
+                    tcg_gen_add_i32x4(cpu_Q[rd >> 1], cpu_Q[rn >> 1], cpu_Q[rm >> 1]);
+                    return 0;
+                }
+                break;
+            default:
+                break;
+        }
+
         for (pass = 0; pass < (q ? 4 : 2); pass++) {
 
         if (pairwise) {
