@@ -139,6 +139,15 @@ static inline void tcg_gen_ldst_op_i64(TCGOpcode opc, TCGv_i64 val,
     *tcg_ctx.gen_opparam_ptr++ = offset;
 }
 
+static inline void tcg_gen_ldst_op_v128(TCGOpcode opc, TCGv_v128 val,
+                                       TCGv_ptr base, TCGArg offset)
+{
+    *tcg_ctx.gen_opc_ptr++ = opc;
+    *tcg_ctx.gen_opparam_ptr++ = GET_TCGV_V128(val);
+    *tcg_ctx.gen_opparam_ptr++ = GET_TCGV_PTR(base);
+    *tcg_ctx.gen_opparam_ptr++ = offset;
+}
+
 static inline void tcg_gen_op4_i32(TCGOpcode opc, TCGv_i32 arg1, TCGv_i32 arg2,
                                    TCGv_i32 arg3, TCGv_i32 arg4)
 {
@@ -1069,6 +1078,11 @@ static inline void tcg_gen_ld_i64(TCGv_i64 ret, TCGv_ptr arg2, tcg_target_long o
     tcg_gen_ldst_op_i64(INDEX_op_ld_i64, ret, arg2, offset);
 }
 
+static inline void tcg_gen_ld_v128(TCGv_v128 ret, TCGv_ptr arg2, tcg_target_long offset)
+{
+    tcg_gen_ldst_op_v128(INDEX_op_ld_v128, ret, arg2, offset);
+}
+
 static inline void tcg_gen_st8_i64(TCGv_i64 arg1, TCGv_ptr arg2,
                                    tcg_target_long offset)
 {
@@ -1090,6 +1104,11 @@ static inline void tcg_gen_st32_i64(TCGv_i64 arg1, TCGv_ptr arg2,
 static inline void tcg_gen_st_i64(TCGv_i64 arg1, TCGv_ptr arg2, tcg_target_long offset)
 {
     tcg_gen_ldst_op_i64(INDEX_op_st_i64, arg1, arg2, offset);
+}
+
+static inline void tcg_gen_st_v128(TCGv_v128 arg1, TCGv_ptr arg2, tcg_target_long offset)
+{
+    tcg_gen_ldst_op_v128(INDEX_op_st_v128, arg1, arg2, offset);
 }
 
 static inline void tcg_gen_add_i64(TCGv_i64 ret, TCGv_i64 arg1, TCGv_i64 arg2)
@@ -2780,6 +2799,8 @@ static inline void tcg_gen_qemu_st64(TCGv_i64 arg, TCGv addr, int mem_index)
     tcg_gen_add_i32(TCGV_PTR_TO_NAT(R), TCGV_PTR_TO_NAT(A), TCGV_PTR_TO_NAT(B))
 # define tcg_gen_addi_ptr(R, A, B) \
     tcg_gen_addi_i32(TCGV_PTR_TO_NAT(R), TCGV_PTR_TO_NAT(A), (B))
+# define tcg_gen_movi_ptr(R, B) \
+    tcg_gen_movi_i32(TCGV_PTR_TO_NAT(R), (B))
 # define tcg_gen_ext_i32_ptr(R, A) \
     tcg_gen_mov_i32(TCGV_PTR_TO_NAT(R), (A))
 #else
@@ -2791,6 +2812,93 @@ static inline void tcg_gen_qemu_st64(TCGv_i64 arg, TCGv addr, int mem_index)
     tcg_gen_add_i64(TCGV_PTR_TO_NAT(R), TCGV_PTR_TO_NAT(A), TCGV_PTR_TO_NAT(B))
 # define tcg_gen_addi_ptr(R, A, B) \
     tcg_gen_addi_i64(TCGV_PTR_TO_NAT(R), TCGV_PTR_TO_NAT(A), (B))
+# define tcg_gen_movi_ptr(R, B) \
+    tcg_gen_movi_i64(TCGV_PTR_TO_NAT(R), (B))
 # define tcg_gen_ext_i32_ptr(R, A) \
     tcg_gen_ext_i32_i64(TCGV_PTR_TO_NAT(R), (A))
 #endif /* UINTPTR_MAX == UINT32_MAX */
+
+/***************************************/
+/* 128-bit vector arithmetic.          */
+
+static inline void *tcg_v128_swap_slot(int n)
+{
+    return &tcg_ctx.v128_swap[n * 16];
+}
+
+/* Find a memory location for 128-bit TCG variable. */
+static inline void tcg_v128_to_ptr(TCGv_v128 tmp, TCGv_ptr base, int slot,
+                                   TCGv_ptr *real_base, intptr_t *real_offset,
+                                   int is_read)
+{
+    int idx = GET_TCGV_V128(tmp);
+    assert(idx >= 0 && idx < tcg_ctx.nb_temps);
+    if (idx < tcg_ctx.nb_globals) {
+        /* Globals use their locations within CPUArchState. */
+        int env = GET_TCGV_PTR(tcg_ctx.cpu_env);
+        TCGTemp *ts_env = &tcg_ctx.temps[env];
+        TCGTemp *ts_arg = &tcg_ctx.temps[idx];
+
+        /* Sanity checks: global's memory locations must be addressed
+           relative to ENV. */
+        assert(ts_env->val_type == TEMP_VAL_REG &&
+               ts_env->reg == ts_arg->mem_reg &&
+               ts_arg->mem_allocated);
+
+        *real_base = tcg_ctx.cpu_env;
+        *real_offset = ts_arg->mem_offset;
+
+        if (is_read) {
+            tcg_gen_sync_temp_v128(tmp);
+        } else {
+            tcg_gen_discard_v128(tmp);
+        }
+    } else {
+        /* Temporaries use swap space in TCGContext. Since we already have
+           a 128-bit temporary we'll assume that the target supports 128-bit
+           loads and stores. */
+        *real_base = base;
+        *real_offset = slot * 16;
+        if (is_read) {
+            tcg_gen_st_v128(tmp, base, slot * 16);
+        }
+    }
+}
+
+static inline void tcg_gen_add_i32x4(TCGv_v128 res, TCGv_v128 arg1,
+                                     TCGv_v128 arg2)
+{
+    if (TCG_TARGET_HAS_add_i32x4) {
+        tcg_gen_op3_v128(INDEX_op_add_i32x4, res, arg1, arg2);
+    } else {
+        TCGv_ptr base = tcg_temp_new_ptr();
+        TCGv_ptr arg1p, arg2p, resp;
+        intptr_t arg1of, arg2of, resof;
+        int i;
+        TCGv_i32 tmp1, tmp2;
+
+        tcg_gen_movi_ptr(base, (unsigned long)&tcg_ctx.v128_swap[0]);
+
+        tcg_v128_to_ptr(arg1, base, 1, &arg1p, &arg1of, 1);
+        tcg_v128_to_ptr(arg2, base, 2, &arg2p, &arg2of, 1);
+        tcg_v128_to_ptr(res, base, 0, &resp, &resof, 0);
+
+        tmp1 = tcg_temp_new_i32();
+        tmp2 = tcg_temp_new_i32();
+
+        for (i = 0; i < 4; i++) {
+            tcg_gen_ld_i32(tmp1, arg1p, arg1of + i * 4);
+            tcg_gen_ld_i32(tmp2, arg2p, arg2of + i * 4);
+            tcg_gen_add_i32(tmp1, tmp1, tmp2);
+            tcg_gen_st_i32(tmp1, resp, resof + i * 4);
+        }
+
+        if (GET_TCGV_V128(res) >= tcg_ctx.nb_globals) {
+            tcg_gen_ld_v128(res, base, 0);
+        }
+
+        tcg_temp_free_i32(tmp1);
+        tcg_temp_free_i32(tmp2);
+        tcg_temp_free_ptr(base);
+    }
+}

@@ -119,6 +119,10 @@ typedef uint64_t TCGRegSet;
 #define TCG_TARGET_HAS_rem_i64          0
 #endif
 
+#ifndef TCG_TARGET_HAS_add_i32x4
+#define TCG_TARGET_HAS_add_i32x4        0
+#endif
+
 /* For 32-bit targets, some sort of unsigned widening multiply is required.  */
 #if TCG_TARGET_REG_BITS == 32 \
     && !(defined(TCG_TARGET_HAS_mulu2_i32) \
@@ -544,6 +548,7 @@ struct TCGContext {
     /* threshold to flush the translated code buffer */
     size_t code_gen_buffer_max_size;
     void *code_gen_ptr;
+    uint8_t v128_swap[16 * 3];
 
     TBContext tb_ctx;
 
