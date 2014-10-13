@@ -345,6 +345,29 @@ static inline void tcg_gen_op6ii_i64(TCGOpcode opc, TCGv_i64 arg1,
     *tcg_ctx.gen_opparam_ptr++ = arg6;
 }
 
+static inline void tcg_gen_op1_v128(TCGOpcode opc, TCGv_v128 arg1)
+{
+    *tcg_ctx.gen_opc_ptr++ = opc;
+    *tcg_ctx.gen_opparam_ptr++ = GET_TCGV_V128(arg1);
+}
+
+static inline void tcg_gen_op2_v128(TCGOpcode opc, TCGv_v128 arg1,
+                                    TCGv_v128 arg2)
+{
+    *tcg_ctx.gen_opc_ptr++ = opc;
+    *tcg_ctx.gen_opparam_ptr++ = GET_TCGV_V128(arg1);
+    *tcg_ctx.gen_opparam_ptr++ = GET_TCGV_V128(arg2);
+}
+
+static inline void tcg_gen_op3_v128(TCGOpcode opc, TCGv_v128 arg1,
+                                    TCGv_v128 arg2, TCGv_v128 arg3)
+{
+    *tcg_ctx.gen_opc_ptr++ = opc;
+    *tcg_ctx.gen_opparam_ptr++ = GET_TCGV_V128(arg1);
+    *tcg_ctx.gen_opparam_ptr++ = GET_TCGV_V128(arg2);
+    *tcg_ctx.gen_opparam_ptr++ = GET_TCGV_V128(arg3);
+}
+
 static inline void tcg_add_param_i32(TCGv_i32 val)
 {
     *tcg_ctx.gen_opparam_ptr++ = GET_TCGV_I32(val);

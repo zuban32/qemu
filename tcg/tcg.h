@@ -194,6 +194,7 @@ typedef struct TCGPool {
 typedef enum TCGType {
     TCG_TYPE_I32,
     TCG_TYPE_I64,
+    TCG_TYPE_V128,
     TCG_TYPE_COUNT, /* number of different types */
 
     /* An alias for the size of the host register.  */
@@ -286,6 +287,7 @@ typedef tcg_target_ulong TCGArg;
 typedef struct TCGv_i32_d *TCGv_i32;
 typedef struct TCGv_i64_d *TCGv_i64;
 typedef struct TCGv_ptr_d *TCGv_ptr;
+typedef struct TCGv_v128_d *TCGv_v128;
 
 static inline TCGv_i32 QEMU_ARTIFICIAL MAKE_TCGV_I32(intptr_t i)
 {
@@ -300,6 +302,11 @@ static inline TCGv_i64 QEMU_ARTIFICIAL MAKE_TCGV_I64(intptr_t i)
 static inline TCGv_ptr QEMU_ARTIFICIAL MAKE_TCGV_PTR(intptr_t i)
 {
     return (TCGv_ptr)i;
+}
+
+static inline TCGv_v128 QEMU_ARTIFICIAL MAKE_TCGV_V128(intptr_t i)
+{
+    return (TCGv_v128)i;
 }
 
 static inline intptr_t QEMU_ARTIFICIAL GET_TCGV_I32(TCGv_i32 t)
@@ -317,6 +324,11 @@ static inline intptr_t QEMU_ARTIFICIAL GET_TCGV_PTR(TCGv_ptr t)
     return (intptr_t)t;
 }
 
+static inline intptr_t QEMU_ARTIFICIAL GET_TCGV_V128(TCGv_v128 t)
+{
+    return (intptr_t)t;
+}
+
 #if TCG_TARGET_REG_BITS == 32
 #define TCGV_LOW(t) MAKE_TCGV_I32(GET_TCGV_I64(t))
 #define TCGV_HIGH(t) MAKE_TCGV_I32(GET_TCGV_I64(t) + 1)
@@ -324,15 +336,18 @@ static inline intptr_t QEMU_ARTIFICIAL GET_TCGV_PTR(TCGv_ptr t)
 
 #define TCGV_EQUAL_I32(a, b) (GET_TCGV_I32(a) == GET_TCGV_I32(b))
 #define TCGV_EQUAL_I64(a, b) (GET_TCGV_I64(a) == GET_TCGV_I64(b))
+#define TCGV_EQUAL_V128(a, b) (GET_TCGV_V128(a) == GET_TCGV_V128(b))
 #define TCGV_EQUAL_PTR(a, b) (GET_TCGV_PTR(a) == GET_TCGV_PTR(b))
 
 /* Dummy definition to avoid compiler warnings.  */
 #define TCGV_UNUSED_I32(x) x = MAKE_TCGV_I32(-1)
 #define TCGV_UNUSED_I64(x) x = MAKE_TCGV_I64(-1)
+#define TCGV_UNUSED_V128(x) x = MAKE_TCGV_V128(-1)
 #define TCGV_UNUSED_PTR(x) x = MAKE_TCGV_PTR(-1)
 
 #define TCGV_IS_UNUSED_I32(x) (GET_TCGV_I32(x) == -1)
 #define TCGV_IS_UNUSED_I64(x) (GET_TCGV_I64(x) == -1)
+#define TCGV_IS_UNUSED_V128(x) (GET_TCGV_V128(x) == -1)
 #define TCGV_IS_UNUSED_PTR(x) (GET_TCGV_PTR(x) == -1)
 
 /* call flags */
@@ -595,6 +610,19 @@ static inline TCGv_i64 tcg_temp_local_new_i64(void)
 }
 void tcg_temp_free_i64(TCGv_i64 arg);
 char *tcg_get_arg_str_i64(TCGContext *s, char *buf, int buf_size, TCGv_i64 arg);
+
+TCGv_v128 tcg_global_mem_new_v128(int reg, intptr_t offset, const char *name);
+TCGv_v128 tcg_temp_new_internal_v128(int temp_local);
+static inline TCGv_v128 tcg_temp_new_v128(void)
+{
+    return tcg_temp_new_internal_v128(0);
+}
+static inline TCGv_v128 tcg_temp_local_new_v128(void)
+{
+    return tcg_temp_new_internal_v128(1);
+}
+void tcg_temp_free_v128(TCGv_v128 arg);
+char *tcg_get_arg_str_v128(TCGContext *s, char *buf, int buf_size, TCGv_v128 arg);
 
 #if defined(CONFIG_DEBUG_TCG)
 /* If you call tcg_clear_temp_count() at the start of a section of
