@@ -248,6 +248,22 @@ static inline void tcg_gen_op6ii_i64(TCGOpcode opc, TCGv_i64 a1, TCGv_i64 a2,
                 GET_TCGV_I64(a3), GET_TCGV_I64(a4), a5, a6);
 }
 
+static inline void tcg_gen_op1_v128(TCGOpcode opc, TCGv_v128 arg1)
+{
+    tcg_gen_op1(&tcg_ctx, opc, GET_TCGV_V128(arg1));
+}
+
+static inline void tcg_gen_op2_v128(TCGOpcode opc, TCGv_v128 arg1,
+                                    TCGv_v128 arg2)
+{
+    tcg_gen_op2(&tcg_ctx, opc, GET_TCGV_V128(arg1), GET_TCGV_V128(arg2));
+}
+
+static inline void tcg_gen_op3_v128(TCGOpcode opc, TCGv_v128 arg1,
+                                    TCGv_v128 arg2, TCGv_v128 arg3)
+{
+    tcg_gen_op3(&tcg_ctx, opc, GET_TCGV_V128(arg1), GET_TCGV_V128(arg2), GET_TCGV_V128(arg3));
+}
 
 /* Generic ops.  */
 

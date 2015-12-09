@@ -557,6 +557,12 @@ TCGv_i64 tcg_global_mem_new_i64(int reg, intptr_t offset, const char *name)
     return MAKE_TCGV_I64(idx);
 }
 
+TCGv_v128 tcg_global_mem_new_v128(int reg, intptr_t offset, const char *name)
+{
+    int idx = tcg_global_mem_new_internal(TCG_TYPE_V128, reg, offset, name);
+    return MAKE_TCGV_V128(idx);
+}
+
 static inline int tcg_temp_new_internal(TCGType type, int temp_local)
 {
     TCGContext *s = &tcg_ctx;
@@ -627,6 +633,14 @@ TCGv_i64 tcg_temp_new_internal_i64(int temp_local)
     return MAKE_TCGV_I64(idx);
 }
 
+TCGv_v128 tcg_temp_new_internal_v128(int temp_local)
+{
+    int idx;
+
+    idx = tcg_temp_new_internal(TCG_TYPE_V128, temp_local);
+    return MAKE_TCGV_V128(idx);
+}
+
 static void tcg_temp_free_internal(int idx)
 {
     TCGContext *s = &tcg_ctx;
@@ -657,6 +671,11 @@ void tcg_temp_free_i32(TCGv_i32 arg)
 void tcg_temp_free_i64(TCGv_i64 arg)
 {
     tcg_temp_free_internal(GET_TCGV_I64(arg));
+}
+
+void tcg_temp_free_v128(TCGv_v128 arg)
+{
+    tcg_temp_free_internal(GET_TCGV_V128(arg));
 }
 
 TCGv_i32 tcg_const_i32(int32_t val)
@@ -952,6 +971,11 @@ char *tcg_get_arg_str_i32(TCGContext *s, char *buf, int buf_size, TCGv_i32 arg)
 char *tcg_get_arg_str_i64(TCGContext *s, char *buf, int buf_size, TCGv_i64 arg)
 {
     return tcg_get_arg_str_idx(s, buf, buf_size, GET_TCGV_I64(arg));
+}
+
+char *tcg_get_arg_str_v128(TCGContext *s, char *buf, int buf_size, TCGv_v128 arg)
+{
+    return tcg_get_arg_str_idx(s, buf, buf_size, GET_TCGV_V128(arg));
 }
 
 /* Find helper name.  */
