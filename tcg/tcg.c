@@ -2459,13 +2459,6 @@ int tcg_gen_code(TCGContext *s, tcg_insn_unit *gen_code_buf)
         		tcg_reg_free(s, s->temps[args[0]].reg);
         	}
         	break;
-        case INDEX_op_sync_temp:
-        	/* We use it only for globals currently. */
-        	assert(args[0] < s->nb_globals);
-        	if (s->temps[args[0]].val_type == TEMP_VAL_REG) {
-        		tcg_reg_free(s, s->temps[args[0]].reg);
-        	}
-        	break;
         case INDEX_op_set_label:
             tcg_reg_alloc_bb_end(s, s->reserved_regs);
             tcg_out_label(s, arg_label(args[0]), s->code_ptr);
