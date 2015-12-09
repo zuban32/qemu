@@ -327,6 +327,16 @@ void tcg_gen_ext16u_i32(TCGv_i32 ret, TCGv_i32 arg);
 void tcg_gen_bswap16_i32(TCGv_i32 ret, TCGv_i32 arg);
 void tcg_gen_bswap32_i32(TCGv_i32 ret, TCGv_i32 arg);
 
+static inline void tcg_gen_discard_v128(TCGv_v128 arg)
+{
+    tcg_gen_op1_v128(INDEX_op_discard, arg);
+}
+
+static inline void tcg_gen_sync_temp_v128(TCGv_v128 arg)
+{
+    tcg_gen_op1_v128(INDEX_op_sync_temp, arg);
+}
+
 static inline void tcg_gen_discard_i32(TCGv_i32 arg)
 {
     tcg_gen_op1_i32(INDEX_op_discard, arg);
