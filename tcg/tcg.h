@@ -584,6 +584,8 @@ struct TCGContext {
     /* The TCGBackendData structure is private to tcg-target.c.  */
     struct TCGBackendData *be;
 
+    TCGv_ptr cpu_env;
+
     TCGTempSet free_temps[TCG_TYPE_COUNT * 2];
     TCGTemp temps[TCG_MAX_TEMPS]; /* globals first, temps after */
 
