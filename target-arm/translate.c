@@ -5455,7 +5455,10 @@ static int disas_neon_data_insn(DisasContext *s, uint32_t insn)
             gen_neon_add(size, tmp, tmp2);
             break;
         case NEON_3R_VADD_VSUB:
-            if (!u) { /* VADD */
+        	if (!u && size == 2) {
+        		tcg_gen_add_i32x4(cpu_Q[rd >> 1], cpu_Q[rn >> 1], cpu_Q[rm >>1]);
+        	}
+        	else if (!u) { /* VADD */
                 gen_neon_add(size, tmp, tmp2);
             } else { /* VSUB */
                 switch (size) {
