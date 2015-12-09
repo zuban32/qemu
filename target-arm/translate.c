@@ -63,6 +63,7 @@ TCGv_ptr cpu_env;
 /* We reuse the same 64-bit temporaries for efficiency.  */
 static TCGv_i64 cpu_V0, cpu_V1, cpu_M0;
 static TCGv_i32 cpu_R[16];
+statit TCGv)v128 cpu_q[16];
 TCGv_i32 cpu_CF, cpu_NF, cpu_VF, cpu_ZF;
 TCGv_i64 cpu_exclusive_addr;
 TCGv_i64 cpu_exclusive_val;
@@ -77,9 +78,13 @@ static TCGv_i64 cpu_F0d, cpu_F1d;
 
 #include "exec/gen-icount.h"
 
-static const char *regnames[] =
+static const char *regnames_r[] =
     { "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
       "r8", "r9", "r10", "r11", "r12", "r13", "r14", "pc" };
+
+static const char *regnames_q[] =
+    { "q0", "q1", "q2", "q3", "q4", "q5", "q6", "q7",
+      "q8", "q9", "q10", "q11", "q12", "q13", "q14", "q15" };
 
 /* initialize TCG globals.  */
 void arm_translate_init(void)
@@ -91,7 +96,12 @@ void arm_translate_init(void)
     for (i = 0; i < 16; i++) {
         cpu_R[i] = tcg_global_mem_new_i32(TCG_AREG0,
                                           offsetof(CPUARMState, regs[i]),
-                                          regnames[i]);
+                                          regnames_r[i]);
+    }
+    for (i = 0; i < 16; i++) {
+    	cpu_Q[i] = tcg_global_mem_new_v128(TCG_AREG0,
+    									   offsetof(CPUARMState, vfp.regs[2 * i]),
+										   regnames_q[i]);
     }
     cpu_CF = tcg_global_mem_new_i32(TCG_AREG0, offsetof(CPUARMState, CF), "CF");
     cpu_NF = tcg_global_mem_new_i32(TCG_AREG0, offsetof(CPUARMState, NF), "NF");
@@ -1327,23 +1337,27 @@ neon_reg_offset (int reg, int n)
 static TCGv_i32 neon_load_reg(int reg, int pass)
 {
     TCGv_i32 tmp = tcg_temp_new_i32();
+    tcg_gen_sync_temp_v128(cpu_Q[reg >> 1]);
     tcg_gen_ld_i32(tmp, cpu_env, neon_reg_offset(reg, pass));
     return tmp;
 }
 
 static void neon_store_reg(int reg, int pass, TCGv_i32 var)
 {
+	tcg_gen_discard_v128(cpu_Q[reg >> 1]);
     tcg_gen_st_i32(var, cpu_env, neon_reg_offset(reg, pass));
     tcg_temp_free_i32(var);
 }
 
 static inline void neon_load_reg64(TCGv_i64 var, int reg)
 {
+	tcg_gen_sync_temp_v128(cpu_Q[reg >> 1]);
     tcg_gen_ld_i64(var, cpu_env, vfp_reg_offset(1, reg));
 }
 
 static inline void neon_store_reg64(TCGv_i64 var, int reg)
 {
+	tcg_gen_discard_v128(cpu_Q[reg >> 1]);
     tcg_gen_st_i64(var, cpu_env, vfp_reg_offset(1, reg));
 }
 
