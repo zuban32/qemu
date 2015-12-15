@@ -1460,8 +1460,8 @@ static void tcg_liveness_analysis(TCGContext *s)
             break;
         case INDEX_op_sync_temp:
 //            args--;
-        	args[0] = args[1];
-        	args[0] = args[1];
+//        	args[0] = args[1];
+//        	args[0] = args[1];
             dead_temps[args[0]] = 1;
             mem_temps[args[0]] = 1;
             break;
@@ -2454,6 +2454,7 @@ int tcg_gen_code(TCGContext *s, tcg_insn_unit *gen_code_buf)
             break;
         case INDEX_op_sync_temp:
         	/* We use it only for globals currently. */
+//        	printf("SYNC temp: args[0] = %u, globals = %d\n", (unsigned)args[0], s->nb_globals);
         	assert(args[0] < s->nb_globals);
         	if (s->temps[args[0]].val_type == TEMP_VAL_REG) {
         		tcg_reg_free(s, s->temps[args[0]].reg);
