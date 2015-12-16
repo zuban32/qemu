@@ -2035,6 +2035,10 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
     ots = &s->temps[args[0]];
     ts = &s->temps[args[1]];
 
+    fprintf(stderr, "Reg_alloc op: %s (", def->name);
+    fprintf(stderr, "%s %s", tcg_target_reg_names[ots->reg], tcg_target_reg_names[ts->reg]);
+    fprintf(stderr, ")\n");
+
     /* Note that otype != itype for no-op truncation.  */
     otype = ots->type;
     itype = ts->type;
@@ -2120,6 +2124,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
     TCGTemp *ts;
     TCGArg new_args[TCG_MAX_OP_ARGS];
     int const_args[TCG_MAX_OP_ARGS];
+    char buf[128];
 
     nb_oargs = def->nb_oargs;
     nb_iargs = def->nb_iargs;
@@ -2129,7 +2134,15 @@ static void tcg_reg_alloc_op(TCGContext *s,
            args + nb_oargs + nb_iargs, 
            sizeof(TCGArg) * def->nb_cargs);
 
-//    fprintf(stderr, "Reg_alloc op: %u (", opc);
+    fprintf(stderr, "Reg_alloc op: %s (", def->name);
+    for(k = 0; k < nb_iargs; k++) {
+    	i = def->sorted_args[nb_oargs+k];
+    	arg = args[i];
+    	ts = &s->temps[arg];
+    	fprintf(stderr, "%s ", tcg_get_arg_str_idx(s, buf, sizeof(buf),
+                arg));
+    }
+    fprintf(stderr, ")\n");
 
     int do_alias = 0;
 
@@ -2147,6 +2160,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
             ts->reg = reg;
             ts->mem_coherent = 1;
             s->reg_to_temp[reg] = arg;
+            do_alias |= (alias[reg] || reg == TCG_AREG0);
         } else if (ts->val_type == TEMP_VAL_CONST) {
             if (tcg_target_const_match(ts->val, ts->type, arg_ct)) {
                 /* constant is OK for instruction */
@@ -2189,7 +2203,20 @@ static void tcg_reg_alloc_op(TCGContext *s,
             reg = tcg_reg_alloc(s, arg_ct->u.regs, allocated_regs);
             tcg_out_mov(s, ts->type, reg, ts->reg);
         }
-        do_alias |= (alias[reg] || reg == TCG_AREG0);
+        if(arg < s->nb_globals && (alias[reg] || reg == TCG_AREG0)) {
+//            assert(arg < s->nb_globals);
+        	fprintf(stderr, "temp2 = %lu, reg = %u\n", arg, ts->reg);
+            fprintf(stderr, "sync_temp alias: %d\n", ts->val_type);
+            if (ts->val_type == TEMP_VAL_REG) {
+            	fprintf(stderr, "OK\n");
+//            	if(alias[args[0]]) {
+            		tcg_reg_free(s, reg);
+//            		fprintf(stderr, "OK\n");
+//            	} else {
+//            		fprintf(stderr, "Saved instruction\n");
+//            	}
+            }
+        }
 
 //        fprintf(stderr, "%s, ", tcg_target_reg_names[reg]);
         new_args[i] = reg;
@@ -2540,21 +2567,22 @@ static inline int tcg_gen_code_common(TCGContext *s,
             goto next;
         case INDEX_op_discard:
             temp_dead(s, args[0]);
-            alias[args[0]] = 0;
+            alias[s->temps[args[0]].reg] = 0;
             break;
         case INDEX_op_sync_temp:
             /* We use it only for globals currently. */
-            assert(args[0] < s->nb_globals);
-            fprintf(stderr, "sync_temp: %d\n", s->temps[args[0]].val_type);
-            if (s->temps[args[0]].val_type == TEMP_VAL_REG) {
-            	fprintf(stderr, "OK\n");
-//            	if(alias[args[0]]) {
-            		tcg_reg_free(s, s->temps[args[0]].reg);
-//            		fprintf(stderr, "OK\n");
-//            	} else {
-//            		fprintf(stderr, "Saved instruction\n");
-//            	}
-            }
+        	fprintf(stderr, "temp1 = %lu, reg = %u\n", args[0], s->temps[args[0]].reg);
+//            assert(args[0] < s->nb_globals);
+//            fprintf(stderr, "sync_temp: %d\n", s->temps[args[0]].val_type);
+//            if (s->temps[args[0]].val_type == TEMP_VAL_REG) {
+//            	fprintf(stderr, "OK\n");
+////            	if(alias[args[0]]) {
+//            		tcg_reg_free(s, s->temps[args[0]].reg);
+////            		fprintf(stderr, "OK\n");
+////            	} else {
+////            		fprintf(stderr, "Saved instruction\n");
+////            	}
+//            }
             break;
         case INDEX_op_set_label:
             tcg_reg_alloc_bb_end(s, s->reserved_regs);
