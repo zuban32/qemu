@@ -2129,6 +2129,10 @@ static void tcg_reg_alloc_op(TCGContext *s,
            args + nb_oargs + nb_iargs, 
            sizeof(TCGArg) * def->nb_cargs);
 
+//    fprintf(stderr, "Reg_alloc op: %u (", opc);
+
+    int do_alias = 0;
+
     /* satisfy input constraints */ 
     tcg_regset_set(allocated_regs, s->reserved_regs);
     for(k = 0; k < nb_iargs; k++) {
@@ -2185,11 +2189,15 @@ static void tcg_reg_alloc_op(TCGContext *s,
             reg = tcg_reg_alloc(s, arg_ct->u.regs, allocated_regs);
             tcg_out_mov(s, ts->type, reg, ts->reg);
         }
+        do_alias |= (alias[reg] || reg == TCG_AREG0);
+
+//        fprintf(stderr, "%s, ", tcg_target_reg_names[reg]);
         new_args[i] = reg;
         const_args[i] = 0;
         tcg_regset_set_reg(allocated_regs, reg);
     iarg_end: ;
     }
+//	fprintf(stderr, ") %s\n", do_alias?"aliases":"");
     
     /* mark dead temporaries and free the associated registers */
     for (i = nb_oargs; i < nb_oargs + nb_iargs; i++) {
@@ -2248,6 +2256,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
             }
         oarg_end:
             new_args[i] = reg;
+            alias[reg] = do_alias;
         }
     }
 
@@ -2531,12 +2540,20 @@ static inline int tcg_gen_code_common(TCGContext *s,
             goto next;
         case INDEX_op_discard:
             temp_dead(s, args[0]);
+            alias[args[0]] = 0;
             break;
         case INDEX_op_sync_temp:
             /* We use it only for globals currently. */
             assert(args[0] < s->nb_globals);
+            fprintf(stderr, "sync_temp: %d\n", s->temps[args[0]].val_type);
             if (s->temps[args[0]].val_type == TEMP_VAL_REG) {
-                tcg_reg_free(s, s->temps[args[0]].reg);
+            	fprintf(stderr, "OK\n");
+//            	if(alias[args[0]]) {
+            		tcg_reg_free(s, s->temps[args[0]].reg);
+//            		fprintf(stderr, "OK\n");
+//            	} else {
+//            		fprintf(stderr, "Saved instruction\n");
+//            	}
             }
             break;
         case INDEX_op_set_label:
