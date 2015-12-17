@@ -2035,9 +2035,9 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
     ots = &s->temps[args[0]];
     ts = &s->temps[args[1]];
 
-    fprintf(stderr, "Reg_alloc op: %s (", def->name);
-    fprintf(stderr, "%s %s", tcg_target_reg_names[ots->reg], tcg_target_reg_names[ts->reg]);
-    fprintf(stderr, ")\n");
+//    fprintf(stderr, "Reg_alloc op: %s (", def->name);
+//    fprintf(stderr, "%s %s", tcg_target_reg_names[ots->reg], tcg_target_reg_names[ts->reg]);
+//    fprintf(stderr, ")\n");
 
     /* Note that otype != itype for no-op truncation.  */
     otype = ots->type;
@@ -2124,7 +2124,6 @@ static void tcg_reg_alloc_op(TCGContext *s,
     TCGTemp *ts;
     TCGArg new_args[TCG_MAX_OP_ARGS];
     int const_args[TCG_MAX_OP_ARGS];
-    char buf[128];
 
     nb_oargs = def->nb_oargs;
     nb_iargs = def->nb_iargs;
@@ -2134,15 +2133,19 @@ static void tcg_reg_alloc_op(TCGContext *s,
            args + nb_oargs + nb_iargs, 
            sizeof(TCGArg) * def->nb_cargs);
 
-    fprintf(stderr, "Reg_alloc op: %s (", def->name);
-    for(k = 0; k < nb_iargs; k++) {
-    	i = def->sorted_args[nb_oargs+k];
-    	arg = args[i];
-    	ts = &s->temps[arg];
-    	fprintf(stderr, "%s ", tcg_get_arg_str_idx(s, buf, sizeof(buf),
-                arg));
-    }
-    fprintf(stderr, ")\n");
+    /* dump op */
+//    char buf[128];
+//    fprintf(stderr, "Reg_alloc op: %s (", def->name);
+//    for(k = 0; k < nb_iargs; k++) {
+//    	i = def->sorted_args[nb_oargs+k];
+//    	arg = args[i];
+//    	ts = &s->temps[arg];
+//    	fprintf(stderr, "%s ", tcg_get_arg_str_idx(s, buf, sizeof(buf),
+//                arg));
+//    }
+//    for(k = 0; k < def->nb_cargs; k++)
+//    	fprintf(stderr, "0x%lx ", new_args[nb_iargs+nb_oargs+k]);
+//    fprintf(stderr, ")\n");
 
     int do_alias = 0;
     int is_ld = (def->name[0] == 'l' && def->name[1] == 'd');
@@ -2183,8 +2186,10 @@ static void tcg_reg_alloc_op(TCGContext *s,
         if(is_ld && ts->reg == TCG_AREG0) {
         	int offset = new_args[nb_iargs+nb_oargs];
         	uint32_t temp_no = (offset - s->reg_offset) / s->reg_size;
-        	if(offset > s->reg_offset && temp_no < s->reg_num)
+        	if(offset >= s->reg_offset && temp_no < s->reg_num && !((offset - s->reg_offset) % s->reg_size)) {
         		do_alias = s->reg_temp_start + temp_no;
+//        		fprintf(stderr, "(0x%x - 0x%x) mod %u = %u\n", offset, s->reg_offset, s->reg_size, (offset - s->reg_offset) % s->reg_size);
+        	}
         }
 
         if (arg_ct->ct & TCG_CT_IALIAS) {
@@ -2214,8 +2219,8 @@ static void tcg_reg_alloc_op(TCGContext *s,
         }
         if(arg < s->nb_globals && (do_alias && reg == TCG_AREG0)) {
 //            assert(arg < s->nb_globals);
-        	fprintf(stderr, "temp2 reg = %u %d\n", do_alias, s->temps[do_alias].reg);
-            fprintf(stderr, "sync_temp alias: %d\n", s->temps[do_alias].val_type);
+//        	fprintf(stderr, "temp2 reg = %u %d\n", do_alias, s->temps[do_alias].reg);
+//            fprintf(stderr, "sync_temp alias: %d\n", s->temps[do_alias].val_type);
             if (s->temps[do_alias].val_type == TEMP_VAL_REG) {
             	fprintf(stderr, "OK\n");
             	//            	if(alias[args[0]]) {
@@ -2583,7 +2588,7 @@ static inline int tcg_gen_code_common(TCGContext *s,
             break;
         case INDEX_op_sync_temp:
             /* We use it only for globals currently. */
-        	fprintf(stderr, "temp1 = %lu, reg = %u\n", args[0], s->temps[args[0]].reg);
+//        	fprintf(stderr, "temp1 = %lu, reg = %u\n", args[0], s->temps[args[0]].reg);
 //            assert(args[0] < s->nb_globals);
 //            fprintf(stderr, "sync_temp: %d\n", s->temps[args[0]].val_type);
 //            if (s->temps[args[0]].val_type == TEMP_VAL_REG) {
