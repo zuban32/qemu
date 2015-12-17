@@ -76,7 +76,7 @@ static const int tcg_target_reg_alloc_order[] = {
 #endif
 };
 
-static int alias[24] = {0};
+static int alias[24] = {-1};
 
 static const int tcg_target_call_iarg_regs[] = {
 #if TCG_TARGET_REG_BITS == 64

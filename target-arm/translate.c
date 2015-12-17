@@ -109,6 +109,13 @@ void arm_translate_init(void)
     cpu_VF = tcg_global_mem_new_i32(TCG_AREG0, offsetof(CPUARMState, VF), "VF");
     cpu_ZF = tcg_global_mem_new_i32(TCG_AREG0, offsetof(CPUARMState, ZF), "ZF");
 
+    tcg_ctx.reg_offset = offsetof(CPUARMState, vfp.regs[0]);
+    tcg_ctx.reg_size = 2*sizeof(((CPUARMState *)0)->vfp.regs[0]);
+    tcg_ctx.reg_num = 16;
+    tcg_ctx.reg_temp_start = (uint64_t) cpu_Q[0];
+
+    fprintf(stderr, "reg_off = 0x%x, reg_size = %u\n", tcg_ctx.reg_offset, tcg_ctx.reg_size);
+
     cpu_exclusive_addr = tcg_global_mem_new_i64(TCG_AREG0,
         offsetof(CPUARMState, exclusive_addr), "exclusive_addr");
     cpu_exclusive_val = tcg_global_mem_new_i64(TCG_AREG0,

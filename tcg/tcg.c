@@ -2145,6 +2145,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
     fprintf(stderr, ")\n");
 
     int do_alias = 0;
+    int is_ld = (def->name[0] == 'l' && def->name[1] == 'd');
 
     /* satisfy input constraints */ 
     tcg_regset_set(allocated_regs, s->reserved_regs);
@@ -2160,7 +2161,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
             ts->reg = reg;
             ts->mem_coherent = 1;
             s->reg_to_temp[reg] = arg;
-            do_alias |= (alias[reg] || reg == TCG_AREG0);
+            do_alias = alias[reg];
         } else if (ts->val_type == TEMP_VAL_CONST) {
             if (tcg_target_const_match(ts->val, ts->type, arg_ct)) {
                 /* constant is OK for instruction */
@@ -2178,6 +2179,14 @@ static void tcg_reg_alloc_op(TCGContext *s,
             }
         }
         assert(ts->val_type == TEMP_VAL_REG);
+
+        if(is_ld && ts->reg == TCG_AREG0) {
+        	int offset = new_args[nb_iargs+nb_oargs];
+        	uint32_t temp_no = (offset - s->reg_offset) / s->reg_size;
+        	if(offset > s->reg_offset && temp_no < s->reg_num)
+        		do_alias = s->reg_temp_start + temp_no;
+        }
+
         if (arg_ct->ct & TCG_CT_IALIAS) {
             if (ts->fixed_reg) {
                 /* if fixed register, we must allocate a new register
@@ -2203,18 +2212,21 @@ static void tcg_reg_alloc_op(TCGContext *s,
             reg = tcg_reg_alloc(s, arg_ct->u.regs, allocated_regs);
             tcg_out_mov(s, ts->type, reg, ts->reg);
         }
-        if(arg < s->nb_globals && (alias[reg] || reg == TCG_AREG0)) {
+        if(arg < s->nb_globals && (do_alias && reg == TCG_AREG0)) {
 //            assert(arg < s->nb_globals);
-        	fprintf(stderr, "temp2 = %lu, reg = %u\n", arg, ts->reg);
-            fprintf(stderr, "sync_temp alias: %d\n", ts->val_type);
-            if (ts->val_type == TEMP_VAL_REG) {
+        	fprintf(stderr, "temp2 reg = %u %d\n", do_alias, s->temps[do_alias].reg);
+            fprintf(stderr, "sync_temp alias: %d\n", s->temps[do_alias].val_type);
+            if (s->temps[do_alias].val_type == TEMP_VAL_REG) {
             	fprintf(stderr, "OK\n");
-//            	if(alias[args[0]]) {
-            		tcg_reg_free(s, reg);
-//            		fprintf(stderr, "OK\n");
-//            	} else {
-//            		fprintf(stderr, "Saved instruction\n");
-//            	}
+            	//            	if(alias[args[0]]) {
+            	if(!is_ld)
+            		tcg_reg_free(s, alias[reg]);
+            	else
+            		tcg_reg_free(s, do_alias);
+            	//            		fprintf(stderr, "OK\n");
+            	//            	} else {
+            	//            		fprintf(stderr, "Saved instruction\n");
+            	//            	}
             }
         }
 
