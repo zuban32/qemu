@@ -2224,10 +2224,11 @@ static void tcg_reg_alloc_op(TCGContext *s,
             if (s->temps[do_alias].val_type == TEMP_VAL_REG) {
             	fprintf(stderr, "OK\n");
             	//            	if(alias[args[0]]) {
-            	if(!is_ld)
+            	if(!is_ld) {
             		tcg_reg_free(s, alias[reg]);
-            	else
+            	} else {
             		tcg_reg_free(s, do_alias);
+            	}
             	//            		fprintf(stderr, "OK\n");
             	//            	} else {
             	//            		fprintf(stderr, "Saved instruction\n");
