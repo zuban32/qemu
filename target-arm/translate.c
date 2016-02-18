@@ -1254,6 +1254,7 @@ neon_reg_offset (int reg, int n)
 static TCGv_i32 neon_load_reg(int reg, int pass)
 {
     TCGv_i32 tmp = tcg_temp_new_i32();
+    fprintf(stderr, "SYNC_TEMP: %p\n", cpu_Q[reg >> 1]);
     tcg_gen_sync_temp_v128(cpu_Q[reg >> 1]);
     tcg_gen_ld_i32(tmp, cpu_env, neon_reg_offset(reg, pass));
     return tmp;

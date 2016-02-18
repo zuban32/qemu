@@ -38,7 +38,7 @@ loop_end:
 
 
 .data
-len = 0xb0000000
+len = 1
 string0: .asciz "Counter = %x\n"
 string1: .asciz "Result = %u\n"
     

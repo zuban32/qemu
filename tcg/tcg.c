@@ -23,13 +23,18 @@
  */
 
 /* define it to use liveness analysis (better code) */
-#define USE_LIVENESS_ANALYSIS
+//#define USE_LIVENESS_ANALYSIS
 #define USE_TCG_OPTIMIZATIONS
 
 #include "config.h"
 
 /* Define to jump the ELF file used to communicate with GDB.  */
 #undef DEBUG_JIT
+
+//#define USE_SYNC_TEMP
+//#define USE_ALIAS_ANALYSIS
+
+#define DEBUG_ALIAS
 
 #if !defined(CONFIG_DEBUG_TCG) && !defined(NDEBUG)
 /* define it to suppress various consistency checks (faster) */
@@ -2147,8 +2152,10 @@ static void tcg_reg_alloc_op(TCGContext *s,
 //    	fprintf(stderr, "0x%lx ", new_args[nb_iargs+nb_oargs+k]);
 //    fprintf(stderr, ")\n");
 
+#ifdef USE_ALIAS_ANALYSIS
     int do_alias = 0;
     int is_ld = (def->name[0] == 'l' && def->name[1] == 'd');
+#endif
 
     /* satisfy input constraints */ 
     tcg_regset_set(allocated_regs, s->reserved_regs);
@@ -2164,7 +2171,9 @@ static void tcg_reg_alloc_op(TCGContext *s,
             ts->reg = reg;
             ts->mem_coherent = 1;
             s->reg_to_temp[reg] = arg;
+#ifdef USE_ALIAS_ANALYSIS
             do_alias = alias[reg];
+#endif
         } else if (ts->val_type == TEMP_VAL_CONST) {
             if (tcg_target_const_match(ts->val, ts->type, arg_ct)) {
                 /* constant is OK for instruction */
@@ -2182,15 +2191,25 @@ static void tcg_reg_alloc_op(TCGContext *s,
             }
         }
         assert(ts->val_type == TEMP_VAL_REG);
-
+#ifdef USE_ALIAS_ANALYSIS
         if(is_ld && ts->reg == TCG_AREG0) {
+//#ifdef DEBUG_ALIAS
+//        	fprintf(stderr, "ld + AREG0\n");
+//#endif
         	int offset = new_args[nb_iargs+nb_oargs];
         	uint32_t temp_no = (offset - s->reg_offset) / s->reg_size;
         	if(offset >= s->reg_offset && temp_no < s->reg_num && !((offset - s->reg_offset) % s->reg_size)) {
         		do_alias = s->reg_temp_start + temp_no;
-//        		fprintf(stderr, "(0x%x - 0x%x) mod %u = %u\n", offset, s->reg_offset, s->reg_size, (offset - s->reg_offset) % s->reg_size);
+#ifdef DEBUG_ALIAS
+        		fprintf(stderr, "do_alias = 0x%x\n", do_alias);
+        		fprintf(stderr, "(0x%x - 0x%x) mod %u = %u\n",
+        				offset, s->reg_offset,
+						s->reg_size,
+						(offset - s->reg_offset) % s->reg_size);
+#endif
         	}
         }
+#endif
 
         if (arg_ct->ct & TCG_CT_IALIAS) {
             if (ts->fixed_reg) {
@@ -2217,32 +2236,29 @@ static void tcg_reg_alloc_op(TCGContext *s,
             reg = tcg_reg_alloc(s, arg_ct->u.regs, allocated_regs);
             tcg_out_mov(s, ts->type, reg, ts->reg);
         }
-        if(arg < s->nb_globals && (do_alias && reg == TCG_AREG0)) {
-//            assert(arg < s->nb_globals);
+#ifdef USE_ALIAS_ANALYSIS
+        if(arg < s->nb_globals && (do_alias)) {
+#ifdef DEBUG_ALIAS
+            	fprintf(stderr, "SHOULD SYNC_TEMP\n");
+                fprintf(stderr, "val_type: %d\n", s->temps[do_alias].val_type);
+#endif
 //        	fprintf(stderr, "temp2 reg = %u %d\n", do_alias, s->temps[do_alias].reg);
-//            fprintf(stderr, "sync_temp alias: %d\n", s->temps[do_alias].val_type);
+            fprintf(stderr, "sync_temp alias: %d\n", s->temps[do_alias].val_type);
             if (s->temps[do_alias].val_type == TEMP_VAL_REG) {
-            	fprintf(stderr, "OK\n");
-            	//            	if(alias[args[0]]) {
             	if(!is_ld) {
             		tcg_reg_free(s, alias[reg]);
             	} else {
             		tcg_reg_free(s, do_alias);
             	}
-            	//            		fprintf(stderr, "OK\n");
-            	//            	} else {
-            	//            		fprintf(stderr, "Saved instruction\n");
-            	//            	}
             }
         }
+#endif
 
-//        fprintf(stderr, "%s, ", tcg_target_reg_names[reg]);
         new_args[i] = reg;
         const_args[i] = 0;
         tcg_regset_set_reg(allocated_regs, reg);
     iarg_end: ;
     }
-//	fprintf(stderr, ") %s\n", do_alias?"aliases":"");
     
     /* mark dead temporaries and free the associated registers */
     for (i = nb_oargs; i < nb_oargs + nb_iargs; i++) {
@@ -2301,7 +2317,9 @@ static void tcg_reg_alloc_op(TCGContext *s,
             }
         oarg_end:
             new_args[i] = reg;
+#ifdef USE_ALIAS_ANALYSIS
             alias[reg] = do_alias;
+#endif
         }
     }
 
@@ -2589,18 +2607,13 @@ static inline int tcg_gen_code_common(TCGContext *s,
             break;
         case INDEX_op_sync_temp:
             /* We use it only for globals currently. */
-//        	fprintf(stderr, "temp1 = %lu, reg = %u\n", args[0], s->temps[args[0]].reg);
-//            assert(args[0] < s->nb_globals);
-//            fprintf(stderr, "sync_temp: %d\n", s->temps[args[0]].val_type);
-//            if (s->temps[args[0]].val_type == TEMP_VAL_REG) {
-//            	fprintf(stderr, "OK\n");
-////            	if(alias[args[0]]) {
-//            		tcg_reg_free(s, s->temps[args[0]].reg);
-////            		fprintf(stderr, "OK\n");
-////            	} else {
-////            		fprintf(stderr, "Saved instruction\n");
-////            	}
-//            }
+#ifdef USE_SYNC_TEMP
+            assert(args[0] < s->nb_globals);
+//            fprintf(stdout, "REAL SYNC_TEMP: %d\n", s->temps[args[0]].val_type);
+            if (s->temps[args[0]].val_type == TEMP_VAL_REG) {
+            		tcg_reg_free(s, s->temps[args[0]].reg);
+            }
+#endif
             break;
         case INDEX_op_set_label:
             tcg_reg_alloc_bb_end(s, s->reserved_regs);
