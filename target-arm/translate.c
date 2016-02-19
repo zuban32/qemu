@@ -103,6 +103,8 @@ void arm_translate_init(void)
         cpu_Q[i] = tcg_global_mem_new_v128(TCG_AREG0,
                                            offsetof(CPUARMState, vfp.regs[2 * i]),
                                            regnames_q[i]);
+
+        fprintf(stderr, "cpu_Q[%d] = %p; off = %lx\n", i, cpu_Q[i], offsetof(CPUARMState, vfp.regs[2 * i]));
     }
     cpu_CF = tcg_global_mem_new_i32(TCG_AREG0, offsetof(CPUARMState, CF), "CF");
     cpu_NF = tcg_global_mem_new_i32(TCG_AREG0, offsetof(CPUARMState, NF), "NF");
@@ -1254,8 +1256,7 @@ neon_reg_offset (int reg, int n)
 static TCGv_i32 neon_load_reg(int reg, int pass)
 {
     TCGv_i32 tmp = tcg_temp_new_i32();
-    fprintf(stderr, "SYNC_TEMP: %p\n", cpu_Q[reg >> 1]);
-    tcg_gen_sync_temp_v128(cpu_Q[reg >> 1]);
+//    tcg_gen_sync_temp_v128(cpu_Q[reg >> 1]);
     tcg_gen_ld_i32(tmp, cpu_env, neon_reg_offset(reg, pass));
     return tmp;
 }
