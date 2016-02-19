@@ -35,7 +35,7 @@
 #define USE_ALIAS_ANALYSIS
 
 #define DEBUG_ALIAS
-//#define DEBUG_ALIAS_DUMP_OPS
+#define DEBUG_ALIAS_DUMP_OPS
 
 #if !defined(CONFIG_DEBUG_TCG) && !defined(NDEBUG)
 /* define it to suppress various consistency checks (faster) */
@@ -2351,7 +2351,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
 
 #ifdef USE_ALIAS_ANALYSIS
 //            fprintf(stderr, "Check oarg: reg = %lx\n", args[i]);
-            if(args[i] >= 0x11 && args[i] < 0x15) {
+            if(args[i] >= s->reg_temp_start && args[i] < s->reg_temp_start+s->reg_num) {
             	tcg_sync_temp(s, args[i]);
             }
             do_alias = alias[reg];
