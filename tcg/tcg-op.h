@@ -50,6 +50,13 @@ static inline void tcg_gen_op1i(TCGOpcode opc, TCGArg arg1)
     *tcg_ctx.gen_opparam_ptr++ = arg1;
 }
 
+static inline void tcg_gen_op2_ptr(TCGOpcode opc, TCGv_ptr arg1, TCGv_ptr arg2)
+{
+    *tcg_ctx.gen_opc_ptr++ = opc;
+    *tcg_ctx.gen_opparam_ptr++ = GET_TCGV_PTR(arg1);
+    *tcg_ctx.gen_opparam_ptr++ = GET_TCGV_PTR(arg2);
+}
+
 static inline void tcg_gen_op2_i32(TCGOpcode opc, TCGv_i32 arg1, TCGv_i32 arg2)
 {
     *tcg_ctx.gen_opc_ptr++ = opc;
@@ -406,6 +413,12 @@ static inline void tcg_gen_mov_i32(TCGv_i32 ret, TCGv_i32 arg)
 {
     if (!TCGV_EQUAL_I32(ret, arg))
         tcg_gen_op2_i32(INDEX_op_mov_i32, ret, arg);
+}
+
+static inline void tcg_gen_mov_ptr(TCGv_ptr ret, TCGv_ptr arg)
+{
+    if (!TCGV_EQUAL_PTR(ret, arg))
+        tcg_gen_op2_ptr(INDEX_op_mov_ptr, ret, arg);
 }
 
 static inline void tcg_gen_movi_i32(TCGv_i32 ret, int32_t arg)

@@ -31,11 +31,10 @@
 /* Define to jump the ELF file used to communicate with GDB.  */
 #undef DEBUG_JIT
 
-//#define USE_SYNC_TEMP
 #define USE_ALIAS_ANALYSIS
 
-#define DEBUG_ALIAS
-#define DEBUG_ALIAS_DUMP_OPS
+//#define DEBUG_ALIAS
+//#define DEBUG_ALIAS_DUMP_OPS
 
 #if !defined(CONFIG_DEBUG_TCG) && !defined(NDEBUG)
 /* define it to suppress various consistency checks (faster) */
@@ -2118,6 +2117,7 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
     }
 }
 
+#ifdef USE_ALIAS_ANALYSIS
 static void tcg_sync_temp(TCGContext *s, TCGArg arg)
 {
     if(arg < s->nb_globals) {
@@ -2132,6 +2132,7 @@ static void tcg_sync_temp(TCGContext *s, TCGArg arg)
         }
     }
 }
+#endif
 
 static void tcg_reg_alloc_op(TCGContext *s, 
                              const TCGOpDef *def, TCGOpcode opc,
@@ -2348,14 +2349,6 @@ static void tcg_reg_alloc_op(TCGContext *s,
         if (IS_DEAD_ARG(i)) {
             temp_dead(s, args[i]);
         }
-
-#ifdef USE_ALIAS_ANALYSIS
-//            fprintf(stderr, "Check oarg: reg = %lx\n", args[i]);
-            if(args[i] >= s->reg_temp_start && args[i] < s->reg_temp_start+s->reg_num) {
-            	tcg_sync_temp(s, args[i]);
-            }
-            do_alias = alias[reg];
-#endif
     }
 }
 
@@ -2599,6 +2592,7 @@ static inline int tcg_gen_code_common(TCGContext *s,
         switch(opc) {
         case INDEX_op_mov_i32:
         case INDEX_op_mov_i64:
+        case INDEX_op_mov_ptr:
             tcg_reg_alloc_mov(s, def, args, s->op_dead_args[op_index],
                               s->op_sync_args[op_index]);
             break;
@@ -2624,13 +2618,11 @@ static inline int tcg_gen_code_common(TCGContext *s,
             break;
         case INDEX_op_sync_temp:
             /* We use it only for globals currently. */
-#ifdef USE_SYNC_TEMP
             assert(args[0] < s->nb_globals);
 //            fprintf(stdout, "REAL SYNC_TEMP: %d\n", s->temps[args[0]].val_type);
             if (s->temps[args[0]].val_type == TEMP_VAL_REG) {
             		tcg_reg_free(s, s->temps[args[0]].reg);
             }
-#endif
             break;
         case INDEX_op_set_label:
             tcg_reg_alloc_bb_end(s, s->reserved_regs);

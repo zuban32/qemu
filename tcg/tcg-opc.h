@@ -59,6 +59,7 @@ DEF(br, 0, 0, 1, TCG_OPF_BB_END)
 #endif
 
 DEF(mov_i32, 1, 1, 0, TCG_OPF_NOT_PRESENT)
+DEF(mov_ptr, 1, 1, 0, TCG_OPF_NOT_PRESENT)
 DEF(movi_i32, 1, 0, 1, TCG_OPF_NOT_PRESENT)
 DEF(setcond_i32, 1, 2, 1, 0)
 DEF(movcond_i32, 1, 4, 1, IMPL(TCG_TARGET_HAS_movcond_i32))
