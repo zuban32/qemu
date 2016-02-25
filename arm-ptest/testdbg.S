@@ -22,8 +22,8 @@ loop:
     @bl printf
     @pop {r7, ip}
 
-    cmp r7, #len
-    bne loop_end
+    @cmp r7, #len
+    @bne loop_end
 
     push {r7, ip}
     ldr r0, =string1
@@ -39,7 +39,7 @@ loop_end:
 
 
 .data
-len = 1
+len = 4
 string0: .asciz "Counter = %x\n"
 string1: .asciz "Result = %u\n"
     

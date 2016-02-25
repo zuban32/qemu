@@ -1,22 +1,6 @@
-cpu_Q[0] = 0x11; off = 658
-cpu_Q[1] = 0x12; off = 668
-cpu_Q[2] = 0x13; off = 678
-cpu_Q[3] = 0x14; off = 688
-cpu_Q[4] = 0x15; off = 698
-cpu_Q[5] = 0x16; off = 6a8
-cpu_Q[6] = 0x17; off = 6b8
-cpu_Q[7] = 0x18; off = 6c8
-cpu_Q[8] = 0x19; off = 6d8
-cpu_Q[9] = 0x1a; off = 6e8
-cpu_Q[10] = 0x1b; off = 6f8
-cpu_Q[11] = 0x1c; off = 708
-cpu_Q[12] = 0x1d; off = 718
-cpu_Q[13] = 0x1e; off = 728
-cpu_Q[14] = 0x1f; off = 738
-cpu_Q[15] = 0x20; off = 748
 Reserved 0xf7000000 bytes of guest address space
 host mmap_min_addr=0x10000
-guest_base  0x7f9c502cb000
+guest_base  0x7fdf3ade8000
 start    end      size     prot
 00008000-00009000 00001000 r-x
 f67ff000-f6800000 00001000 ---
@@ -26,7 +10,7 @@ end_code    0x00008090
 start_code  0x00008000
 start_data  0x00008090
 end_data    0x00008090
-start_stack 0xf6fff210
+start_stack 0xf6fff200
 brk         0x00008090
 entry       0x00008054
 OP after optimization and liveness analysis:
@@ -34,137 +18,118 @@ OP after optimization and liveness analysis:
  movi_i32 tmp6,$0x0
  brcond_i32 tmp5,tmp6,ne,$0x0
  ---- 0x8054
- nopn $0x2,$0x2
+ movi_i32 tmp5,$0x1
  movi_i32 r7,$0x1
 
  ---- 0x8058
  movi_i32 tmp5,$0x1
- discard q0
  st_i32 tmp5,env,$0x658
  movi_i32 tmp5,$0x1
- discard q0
  st_i32 tmp5,env,$0x65c
 
  ---- 0x805c
  movi_i32 tmp5,$0x0
- discard q0
  st_i32 tmp5,env,$0x660
  movi_i32 tmp5,$0x0
- discard q0
  st_i32 tmp5,env,$0x664
 
  ---- 0x8060
  movi_i32 tmp5,$0x1
- discard q1
  st_i32 tmp5,env,$0x668
  movi_i32 tmp5,$0x1
- discard q1
  st_i32 tmp5,env,$0x66c
 
  ---- 0x8064
  movi_i32 tmp5,$0x0
- discard q1
  st_i32 tmp5,env,$0x670
  movi_i32 tmp5,$0x0
- discard q1
  st_i32 tmp5,env,$0x674
 
  ---- 0x8068
  movi_i32 tmp5,$0x2
- discard q2
  st_i32 tmp5,env,$0x678
  movi_i32 tmp5,$0x2
- discard q2
  st_i32 tmp5,env,$0x67c
 
  ---- 0x806c
  movi_i32 tmp5,$0x0
- discard q2
  st_i32 tmp5,env,$0x680
  movi_i32 tmp5,$0x0
- discard q2
  st_i32 tmp5,env,$0x684
 
  ---- 0x8070
  add_i32x4 q0,q0,q1
 
  ---- 0x8074
- nopn $0x3,$0x14,$0x3
+ add_i32x4 q3,q3,q0
 
  ---- 0x8078
- ld_i32 tmp5,env,$0x688
- ld_i32 tmp6,env,$0x678
+ mov_ptr tmp7,env
+ ld_i32 tmp5,tmp7,$0x688
+ mov_ptr tmp7,env
+ ld_i32 tmp6,tmp7,$0x678
  mul_i32 tmp5,tmp5,tmp6
- discard q3
  st_i32 tmp5,env,$0x688
- ld_i32 tmp5,env,$0x68c
- ld_i32 tmp6,env,$0x67c
+ mov_ptr tmp7,env
+ ld_i32 tmp5,tmp7,$0x68c
+ mov_ptr tmp7,env
+ ld_i32 tmp6,tmp7,$0x67c
  mul_i32 tmp5,tmp5,tmp6
- discard q3
  st_i32 tmp5,env,$0x68c
- ld_i32 tmp5,env,$0x690
- ld_i32 tmp6,env,$0x680
+ mov_ptr tmp7,env
+ ld_i32 tmp5,tmp7,$0x690
+ mov_ptr tmp7,env
+ ld_i32 tmp6,tmp7,$0x680
  mul_i32 tmp5,tmp5,tmp6
- discard q3
  st_i32 tmp5,env,$0x690
- ld_i32 tmp5,env,$0x694
- ld_i32 tmp6,env,$0x684
+ mov_ptr tmp7,env
+ ld_i32 tmp5,tmp7,$0x694
+ mov_ptr tmp7,env
+ ld_i32 tmp6,tmp7,$0x684
  mul_i32 tmp5,tmp5,tmp6
- discard q3
  st_i32 tmp5,env,$0x694
 
  ---- 0x807c
  add_i32x4 q3,q3,q0
 
  ---- 0x8080
- nopn $0x2,$0x2
- nopn $0x2,$0x2
+ movi_i32 tmp5,$0x1
+ movi_i32 tmp6,$0x1
  movi_i32 NF,$0x0
  movi_i32 ZF,$0x0
  movi_i32 CF,$0x1
- nopn $0x2,$0x2
- nopn $0x2,$0x2
+ movi_i32 VF,$0x1
+ movi_i32 tmp8,$0x0
  movi_i32 VF,$0x0
- nopn $0x2,$0x2
+ movi_i32 tmp6,$0x0
 
  ---- 0x8084
- nopn $0x2,$0x2
+ movi_i32 tmp5,$0x0
  br $0x1
  goto_tb $0x0
  movi_i32 pc,$0x8088
- exit_tb $0x7f9d472cb010
+ exit_tb $0x7fe031de8010
  set_label $0x1
  goto_tb $0x1
  movi_i32 pc,$0x8088
- exit_tb $0x7f9d472cb011
+ exit_tb $0x7fe031de8011
  set_label $0x0
- exit_tb $0x7f9d472cb013
- end 
+ exit_tb $0x7fe031de8013
 
-do_alias = 0x14
-(0x688 - 0x658) mod 16 = 0
-SHOULD SYNC_TEMP
-val_type: 2
-sync_temp alias: 2
-do_alias = 0x13
-(0x678 - 0x658) mod 16 = 0
-SHOULD SYNC_TEMP
-val_type: 2
-sync_temp alias: 2
 OP after optimization and liveness analysis:
  ld_i32 tmp5,env,$0xfffffffffffffffc
  movi_i32 tmp6,$0x0
  brcond_i32 tmp5,tmp6,ne,$0x0
  ---- 0x8088
  movi_i32 tmp5,$0x1
- nopn $0x2,$0x2
+ mov_i32 tmp6,r7
  sub_i32 NF,r7,tmp5
  mov_i32 ZF,NF
  setcond_i32 CF,r7,tmp5,geu
  xor_i32 VF,NF,r7
  xor_i32 tmp7,r7,tmp5
  and_i32 VF,VF,tmp7
- nopn $0x2,$0x2
+ mov_i32 tmp6,NF
  mov_i32 r7,ZF
 
  ---- 0x808c
@@ -172,14 +137,13 @@ OP after optimization and liveness analysis:
  brcond_i32 ZF,tmp5,eq,$0x1
  goto_tb $0x0
  movi_i32 pc,$0x8070
- exit_tb $0x7f9d472cb078
+ exit_tb $0x7fe031de8078
  set_label $0x1
  goto_tb $0x1
  movi_i32 pc,$0x8090
- exit_tb $0x7f9d472cb079
+ exit_tb $0x7fe031de8079
  set_label $0x0
- exit_tb $0x7f9d472cb07b
- end 
+ exit_tb $0x7fe031de807b
 
 TCG temporary leak before 00008098
 OP after optimization and liveness analysis:
@@ -189,10 +153,10 @@ OP after optimization and liveness analysis:
  ---- 0x8090
  movi_i32 tmp5,$0x0
  brcond_i32 ZF,tmp5,ne,$0x1
- nopn $0x2,$0x2
+ mov_i32 tmp5,r1
  movi_i32 tmp6,$0xe
  sar_i32 tmp5,r1,tmp6
- nopn $0x2,$0x2
+ mov_i32 tmp6,r0
  and_i32 tmp6,r0,tmp5
  mov_i32 r1,tmp6
  set_label $0x1
@@ -200,7 +164,7 @@ OP after optimization and liveness analysis:
  ---- 0x8094
  movi_i32 tmp5,$0x0
  brcond_i32 VF,tmp5,ge,$0x2
- nopn $0x2,$0x2
+ mov_i32 tmp5,r0
  movi_i32 pc,$0x8094
  movi_i32 tmp6,$0x1
  movi_i32 tmp7,$0x2000000
@@ -209,10 +173,9 @@ OP after optimization and liveness analysis:
  set_label $0x2
  goto_tb $0x1
  movi_i32 pc,$0x8098
- exit_tb $0x7f9d472cb0e1
+ exit_tb $0x7fe031de80e1
  set_label $0x0
- exit_tb $0x7f9d472cb0e3
- end 
+ exit_tb $0x7fe031de80e3
 
 OP after optimization and liveness analysis:
  ld_i32 tmp5,env,$0xfffffffffffffffc
@@ -229,9 +192,8 @@ OP after optimization and liveness analysis:
  set_label $0x1
  goto_tb $0x1
  movi_i32 pc,$0x809c
- exit_tb $0x7f9d472cb149
+ exit_tb $0x7fe031de8149
  set_label $0x0
- exit_tb $0x7f9d472cb14b
- end 
+ exit_tb $0x7fe031de814b
 
 qemu: uncaught target signal 4 (Illegal instruction) - core dumped
