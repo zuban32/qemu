@@ -109,3 +109,6 @@ cscope.*
 tags
 TAGS
 *~
+/arm-ptest/*
+!/arm-ptest/*.S
+!/arm-ptest/build.sh
