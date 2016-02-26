@@ -2040,10 +2040,6 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
     ots = &s->temps[args[0]];
     ts = &s->temps[args[1]];
 
-//    fprintf(stderr, "Reg_alloc op: %s (", def->name);
-//    fprintf(stderr, "%s %s", tcg_target_reg_names[ots->reg], tcg_target_reg_names[ts->reg]);
-//    fprintf(stderr, ")\n");
-
     /* Note that otype != itype for no-op truncation.  */
     otype = ots->type;
     itype = ts->type;
@@ -2114,6 +2110,23 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
         if (NEED_SYNC_ARG(0)) {
             tcg_reg_sync(s, ots->reg);
         }
+
+#ifdef DEBUG_ALIAS_DUMP_OPS
+    fprintf(stderr, "Reg_alloc op: %s (", def->name);
+    fprintf(stderr, "%s %s", tcg_target_reg_names[ots->reg], tcg_target_reg_names[ts->reg]);
+    fprintf(stderr, ")\n");
+#endif
+#ifdef DEBUG_ALIAS
+    if(def->name[4] == 'p')
+    	fprintf(stderr, "MOV: %x <- %x\n", ots->reg, ts->reg);
+#endif
+#ifdef USE_ALIAS_ANALYSIS
+    alias[ots->reg] = alias[ts->reg];
+#ifdef DEBUG_ALIAS
+    if(alias[ots->reg])
+    	fprintf(stderr, "ALIAS: %x -> %x\n", ts->reg, ots->reg);
+#endif
+#endif
     }
 }
 
@@ -2218,10 +2231,11 @@ static void tcg_reg_alloc_op(TCGContext *s,
 
         assert(ts->val_type == TEMP_VAL_REG);
 #ifdef USE_ALIAS_ANALYSIS
-        if(is_ld && ts->reg == TCG_AREG0) {
-//#ifdef DEBUG_ALIAS
-//        	fprintf(stderr, "ld + AREG0\n");
-//#endif
+#ifdef DEBUG_ALIAS
+        if(is_ld)
+        	fprintf(stderr, "alias[%x] = %d\n", ts->reg, alias[ts->reg]);
+#endif
+        if(is_ld && alias[ts->reg]) {
         	int offset = new_args[nb_iargs+nb_oargs];
         	uint32_t temp_no = (offset - s->reg_offset) / s->reg_size;
         	if(offset >= s->reg_offset && temp_no < s->reg_num && !((offset - s->reg_offset) % s->reg_size)) {
