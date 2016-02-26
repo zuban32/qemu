@@ -2110,6 +2110,7 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
         if (NEED_SYNC_ARG(0)) {
             tcg_reg_sync(s, ots->reg);
         }
+    }
 
 #ifdef DEBUG_ALIAS_DUMP_OPS
     fprintf(stderr, "Reg_alloc op: %s (", def->name);
@@ -2127,7 +2128,6 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
     	fprintf(stderr, "ALIAS: %x -> %x\n", ts->reg, ots->reg);
 #endif
 #endif
-    }
 }
 
 #ifdef USE_ALIAS_ANALYSIS
