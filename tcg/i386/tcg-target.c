@@ -2432,8 +2432,10 @@ static void tcg_target_init(TCGContext *s)
     tcg_add_target_add_op_defs(x86_op_defs);
 #ifdef USE_ALIAS_ANALYSIS
     s->alias = calloc(24, sizeof(*s->alias));
+    memset(s->alias, -1, sizeof(*s->alias));
+    s->alias[TCG_AREG0] = 0;
+
     s->store = calloc(24, sizeof(*s->store));
-    s->alias[TCG_AREG0] = 1;
 #endif
 }
 

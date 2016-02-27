@@ -2137,7 +2137,6 @@ static void tcg_sync_temp(TCGContext *s, TCGArg arg)
 #ifdef DEBUG_ALIAS
         fprintf(stderr, "SHOULD SYNC_TEMP\n");
         fprintf(stderr, "val_type: %d\n", s->temps[arg].val_type);
-//            fprintf(stderr, "temp2 reg = %u %d\n", do_alias, s->temps[do_alias].reg);
         fprintf(stderr, "sync_temp alias: %d\n", s->temps[arg].val_type);
 #endif
         if (s->temps[arg].val_type == TEMP_VAL_REG) {
@@ -2171,7 +2170,6 @@ static void tcg_reg_alloc_op(TCGContext *s,
 #ifdef DEBUG_ALIAS_DUMP_OPS
     /* dump op */
     char buf[128];
-//    fprintf(stderr, "iargs = %u, oargs = %u \n", nb_iargs, nb_oargs);
     fprintf(stderr, "Reg_alloc op: %s (", def->name);
     for(k = 0; k < nb_oargs; k++) {
         	i = def->sorted_args[k];
@@ -2193,7 +2191,6 @@ static void tcg_reg_alloc_op(TCGContext *s,
 #endif
 
 #ifdef USE_ALIAS_ANALYSIS
-    int do_alias = 0;
     int is_ld = (def->name[0] == 'l' && def->name[1] == 'd');
     int is_st = (def->name[0] == 's' && def->name[1] == 't');
 #endif
@@ -2236,11 +2233,10 @@ static void tcg_reg_alloc_op(TCGContext *s,
         if(is_ld)
         	fprintf(stderr, "alias[%x] = %d\n", ts->reg, alias[ts->reg]);
 #endif
-        if(is_ld && s->alias[ts->reg]) {
-        	int offset = new_args[nb_iargs+nb_oargs];
+        if(unlikely(is_ld && s->alias[ts->reg] >= 0)) {
+        	int offset = s->alias[ts->reg] + new_args[nb_iargs+nb_oargs];
         	uint32_t temp_no = (offset - s->reg_offset) / s->reg_size;
-        	if(offset >= s->reg_offset && temp_no < s->reg_num && !((offset - s->reg_offset) % s->reg_size)) {
-        		do_alias = s->reg_temp_start + temp_no;
+        	if(offset >= s->reg_offset && temp_no < s->reg_num && ((offset - s->reg_offset) % s->reg_size) == 0) {
 #ifdef DEBUG_ALIAS
         		fprintf(stderr, "do_alias = 0x%x\n", do_alias);
         		fprintf(stderr, "(0x%x - 0x%x) mod %u = %u\n",
@@ -2249,7 +2245,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
 						(offset - s->reg_offset) % s->reg_size);
 #endif
         		if(!s->store[ts->reg])
-        			tcg_sync_temp(s, do_alias);
+        			tcg_sync_temp(s, s->reg_temp_start + temp_no);
         	}
         } else if(is_ld) {
         	s->store[ts->reg] = 0;
@@ -2350,9 +2346,6 @@ static void tcg_reg_alloc_op(TCGContext *s,
             }
         oarg_end:
             new_args[i] = reg;
-#ifdef USE_ALIAS_ANALYSIS
-            s->alias[reg] = do_alias;
-#endif
         }
     }
 

@@ -557,8 +557,8 @@ struct TCGContext {
     uint32_t reg_temp_start;
 
 #ifdef USE_ALIAS_ANALYSIS
-    int *alias;
-    int *store;
+    int8_t *alias;
+    int8_t *store;
 #endif
 
     TBContext tb_ctx;
