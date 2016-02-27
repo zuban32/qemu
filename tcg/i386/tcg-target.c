@@ -76,8 +76,6 @@ static const int tcg_target_reg_alloc_order[] = {
 #endif
 };
 
-static int alias[24] = {0};
-
 static const int tcg_target_call_iarg_regs[] = {
 #if TCG_TARGET_REG_BITS == 64
 #if defined(_WIN64)
@@ -2432,8 +2430,11 @@ static void tcg_target_init(TCGContext *s)
     tcg_regset_set_reg(s->reserved_regs, TCG_REG_CALL_STACK);
 
     tcg_add_target_add_op_defs(x86_op_defs);
-
-    alias[TCG_AREG0] = 1;
+#ifdef USE_ALIAS_ANALYSIS
+    s->alias = calloc(24, sizeof(*s->alias));
+    s->store = calloc(24, sizeof(*s->store));
+    s->alias[TCG_AREG0] = 1;
+#endif
 }
 
 typedef struct {

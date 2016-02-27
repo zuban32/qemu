@@ -23,7 +23,7 @@
  */
 
 /* define it to use liveness analysis (better code) */
-//#define USE_LIVENESS_ANALYSIS
+#define USE_LIVENESS_ANALYSIS
 #define USE_TCG_OPTIMIZATIONS
 
 #include "config.h"
@@ -2122,7 +2122,7 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
     	fprintf(stderr, "MOV: %x <- %x\n", ots->reg, ts->reg);
 #endif
 #ifdef USE_ALIAS_ANALYSIS
-    alias[ots->reg] = alias[ts->reg];
+    s->alias[ots->reg] = s->alias[ts->reg];
 #ifdef DEBUG_ALIAS
     if(alias[ots->reg])
     	fprintf(stderr, "ALIAS: %x -> %x\n", ts->reg, ots->reg);
@@ -2195,6 +2195,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
 #ifdef USE_ALIAS_ANALYSIS
     int do_alias = 0;
     int is_ld = (def->name[0] == 'l' && def->name[1] == 'd');
+    int is_st = (def->name[0] == 's' && def->name[1] == 't');
 #endif
 
     /* satisfy input constraints */ 
@@ -2235,7 +2236,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
         if(is_ld)
         	fprintf(stderr, "alias[%x] = %d\n", ts->reg, alias[ts->reg]);
 #endif
-        if(is_ld && alias[ts->reg]) {
+        if(is_ld && s->alias[ts->reg]) {
         	int offset = new_args[nb_iargs+nb_oargs];
         	uint32_t temp_no = (offset - s->reg_offset) / s->reg_size;
         	if(offset >= s->reg_offset && temp_no < s->reg_num && !((offset - s->reg_offset) % s->reg_size)) {
@@ -2247,8 +2248,11 @@ static void tcg_reg_alloc_op(TCGContext *s,
 						s->reg_size,
 						(offset - s->reg_offset) % s->reg_size);
 #endif
-        		tcg_sync_temp(s, do_alias);
+        		if(!s->store[ts->reg])
+        			tcg_sync_temp(s, do_alias);
         	}
+        } else if(is_ld) {
+        	s->store[ts->reg] = 0;
         }
 #endif
 
@@ -2327,6 +2331,11 @@ static void tcg_reg_alloc_op(TCGContext *s,
                 reg = tcg_reg_alloc(s, arg_ct->u.regs, allocated_regs);
             }
             tcg_regset_set_reg(allocated_regs, reg);
+#ifdef USE_ALIAS_ANALYSIS
+            if(is_st) {
+            	s->store[ts->reg] = 1;
+            }
+#endif
             /* if a fixed register is used, then a move will be done afterwards */
             if (!ts->fixed_reg) {
                 if (ts->val_type == TEMP_VAL_REG) {
@@ -2342,7 +2351,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
         oarg_end:
             new_args[i] = reg;
 #ifdef USE_ALIAS_ANALYSIS
-            alias[reg] = do_alias;
+            s->alias[reg] = do_alias;
 #endif
         }
     }
@@ -2628,7 +2637,9 @@ static inline int tcg_gen_code_common(TCGContext *s,
             goto next;
         case INDEX_op_discard:
             temp_dead(s, args[0]);
-            alias[s->temps[args[0]].reg] = 0;
+#ifdef USE_ALIAS_ANALYSIS
+            s->alias[s->temps[args[0]].reg] = 0;
+#endif
             break;
         case INDEX_op_sync_temp:
             /* We use it only for globals currently. */

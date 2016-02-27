@@ -556,6 +556,11 @@ struct TCGContext {
     uint32_t reg_num;
     uint32_t reg_temp_start;
 
+#ifdef USE_ALIAS_ANALYSIS
+    int *alias;
+    int *store;
+#endif
+
     TBContext tb_ctx;
 
     /* The TCGBackendData structure is private to tcg-target.c.  */

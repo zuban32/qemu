@@ -38,7 +38,7 @@
 #include "trace-tcg.h"
 
 //#define ENABLE_SYNC_TEMP
-#define REPLACE_LD_REG
+//#define REPLACE_LD_REG
 
 #define ENABLE_ARCH_4T    arm_feature(env, ARM_FEATURE_V4T)
 #define ENABLE_ARCH_5     arm_feature(env, ARM_FEATURE_V5)
