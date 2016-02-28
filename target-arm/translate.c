@@ -114,7 +114,7 @@ void arm_translate_init(void)
     cpu_ZF = tcg_global_mem_new_i32(TCG_AREG0, offsetof(CPUARMState, ZF), "ZF");
 
     tcg_ctx.reg_offset = offsetof(CPUARMState, vfp.regs[0]);
-    tcg_ctx.reg_size = 2*sizeof(((CPUARMState *)0)->vfp.regs[0]);
+    tcg_ctx.reg_size = 2 * sizeof(((CPUARMState *)0)->vfp.regs[0]);
     tcg_ctx.reg_num = 16;
     tcg_ctx.reg_temp_start = (uint64_t) cpu_Q[0];
 
@@ -1264,8 +1264,9 @@ static TCGv_i32 neon_load_reg(int reg, int pass)
 #endif
 #ifdef REPLACE_LD_REG
     TCGv_ptr tmp1 = tcg_temp_new_ptr();
-    tcg_gen_mov_ptr(tmp1, cpu_env);
-    tcg_gen_ld_i32(tmp, tmp1, neon_reg_offset(reg, pass));
+//    tcg_gen_mov_ptr(tmp1, cpu_env);
+    tcg_gen_addi_ptr(tmp1, cpu_env, 0x10);
+    tcg_gen_ld_i32(tmp, tmp1, neon_reg_offset(reg, pass)-0x10);
     tcg_temp_free_ptr(tmp1);
 #else
     tcg_gen_ld_i32(tmp, cpu_env, neon_reg_offset(reg, pass));
