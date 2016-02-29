@@ -23,7 +23,7 @@
  */
 
 /* define it to use liveness analysis (better code) */
-//#define USE_LIVENESS_ANALYSIS
+#define USE_LIVENESS_ANALYSIS
 #define USE_TCG_OPTIMIZATIONS
 
 #include "config.h"
@@ -1551,6 +1551,35 @@ static void tcg_liveness_analysis(TCGContext *s)
             nb_args = args[-1];
             args -= nb_args;
             break;
+#ifdef USE_ALIAS_ANALYSIS
+        case INDEX_op_ld_i32:
+        case INDEX_op_ld_i64:
+            args -= def->nb_args;
+            nb_iargs = def->nb_iargs;
+            nb_oargs = def->nb_oargs;
+            if(def->nb_oargs == 1 && def->nb_iargs >= 1 && def->nb_cargs <= 1) {
+            	int arg_ind = 1;
+            	if(s->alias[s->temps[args[arg_ind]].reg] >= 0) {
+            		dead_temps[args[arg_ind]] = 1;
+            		mem_temps[args[arg_ind]] = 1;
+            	}
+            }
+        	goto do_not_remove;
+        case INDEX_op_st_i32:
+        case INDEX_op_st_i64:
+            args -= def->nb_args;
+            nb_iargs = def->nb_iargs;
+            nb_oargs = def->nb_oargs;
+            if(def->nb_iargs >= 1 && def->nb_cargs == 1) {
+            	int arg_ind = 1;
+				if(s->alias[s->temps[args[arg_ind]].reg] >= 0) {
+					/* mark the temporary as dead */
+					dead_temps[args[arg_ind]] = 1;
+					mem_temps[args[arg_ind]] = 0;
+				}
+            }
+        	goto do_not_remove;
+#endif
         case INDEX_op_discard:
             args--;
             /* mark the temporary as dead */
@@ -1654,6 +1683,7 @@ static void tcg_liveness_analysis(TCGContext *s)
             args -= def->nb_args;
             nb_iargs = def->nb_iargs;
             nb_oargs = def->nb_oargs;
+//            live_end:
 
             /* Test if the operation can be removed because all
                its outputs are dead. We assume that nb_oargs == 0
@@ -2209,8 +2239,8 @@ static void tcg_reg_alloc_op(TCGContext *s,
         if(is_ld)
         	fprintf(stderr, "alias[%x] = %d\n", ts->reg, s->alias[ts->reg]);
 #endif
-        if(unlikely(is_ld && s->alias[ts->reg] >= 0 &&
-        		(nb_iargs >= 1 && nb_oargs == 1))) {
+        if(is_ld && s->alias[ts->reg] >= 0 &&
+        		(nb_iargs >= 1 && nb_oargs == 1)) {
         	int offset = s->alias[ts->reg] + new_args[nb_iargs+nb_oargs];
         	uint32_t temp_no = (offset - s->reg_offset) / s->reg_size;
         	if(offset >= s->reg_offset && temp_no < s->reg_num && ((offset - s->reg_offset) % s->reg_size) == 0) {
@@ -2331,7 +2361,8 @@ static void tcg_reg_alloc_op(TCGContext *s,
 #ifdef USE_ALIAS_ANALYSIS
         TCGTemp *tts = &s->temps[args[nb_oargs]];
         if(s->alias[tts->reg] >= 0 && nb_oargs == 1 && nb_iargs == 2 &&
-        		s->temps[args[nb_oargs+1]].val_type == TEMP_VAL_CONST) {
+        		(s->temps[args[nb_oargs+1]].val_type == TEMP_VAL_CONST ||
+        				s->temps[args[nb_oargs+1]].val_type == TEMP_VAL_DEAD)) {
 		target_ulong offset = s->temps[args[nb_oargs+1]].val;
 		int tmp_res = 0;
         switch(opc) {
