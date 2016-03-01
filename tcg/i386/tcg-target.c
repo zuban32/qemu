@@ -2434,8 +2434,6 @@ static void tcg_target_init(TCGContext *s)
     s->alias = calloc(24, sizeof(*s->alias));
     memset(s->alias, -1, sizeof(*s->alias));
     s->alias[TCG_AREG0] = 0;
-
-    s->store = calloc(24, sizeof(*s->store));
 #endif
 }
 

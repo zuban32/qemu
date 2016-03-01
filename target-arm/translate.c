@@ -118,6 +118,9 @@ void arm_translate_init(void)
     tcg_ctx.reg_num = 16;
     tcg_ctx.reg_temp_start = (uint64_t) cpu_Q[0];
 
+
+    tcg_ctx.store = calloc(16, sizeof(*(tcg_ctx.store)));
+
 //    fprintf(stderr, "reg_off = 0x%x, reg_size = %u\n", tcg_ctx.reg_offset, tcg_ctx.reg_size);
 
     cpu_exclusive_addr = tcg_global_mem_new_i64(TCG_AREG0,

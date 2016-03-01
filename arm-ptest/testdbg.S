@@ -14,6 +14,7 @@ loop:
     vadd.i32	q0, q0, q1
     vadd.i32    q3, q3, q0
     vmul.i32	q3, q3, q2
+    vmul.i32	q3, q3, q1
     vadd.i32	q3, q3,	q1
 
     @push {r7, ip}
