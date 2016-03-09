@@ -33,7 +33,7 @@
 
 #define USE_ALIAS_ANALYSIS
 
-//#define DEBUG_ALIAS
+#define DEBUG_ALIAS
 
 #if !defined(CONFIG_DEBUG_TCG) && !defined(NDEBUG)
 /* define it to suppress various consistency checks (faster) */
@@ -2140,28 +2140,16 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
         }
     }
 
-#ifdef DEBUG_ALIAS
-    if(def->name[4] == 'p')
-    	fprintf(stderr, "MOV: %x <- %x\n", ots->reg, ts->reg);
-#endif
 #ifdef USE_ALIAS_ANALYSIS
     s->alias[ots->reg] = s->alias[ts->reg];
-#ifdef DEBUG_ALIAS
-    if(s->alias[ots->reg])
-    	fprintf(stderr, "ALIAS: %x -> %x\n", ts->reg, ots->reg);
-#endif
 #endif
 }
-
-//static uint32_t syncs = 0, real_syncs = 0;
 
 #ifdef USE_ALIAS_ANALYSIS
 static void tcg_sync_temp(TCGContext *s, TCGArg arg)
 {
-//	fprintf(stderr, "1: tcg_sync_temp #%u\n", syncs++);
     if(arg < s->nb_globals) {
         if (s->temps[arg].val_type == TEMP_VAL_REG) {
-//        	fprintf(stderr, "1: real sync_temp #%u\n", real_syncs++);
         	tcg_reg_free(s, s->temps[arg].reg);
         }
     }
@@ -2189,34 +2177,9 @@ static void tcg_reg_alloc_op(TCGContext *s,
            args + nb_oargs + nb_iargs, 
            sizeof(TCGArg) * def->nb_cargs);
 
-//    if((opc == INDEX_op_ld_i32 && (new_args[nb_iargs+nb_oargs] != -4))|| opc == INDEX_op_ld_i64 || opc == INDEX_op_mul_i32 ||
-//    		opc == INDEX_op_add_i32x4 || opc == INDEX_op_st_i32) {
-//		/* dump op */
-//		char buf[128];
-//	//    fprintf(stderr, "iargs = %u, oargs = %u \n", nb_iargs, nb_oargs);
-//		fprintf(stderr, "Reg_alloc op: %s (", def->name);
-//		for(k = 0; k < nb_oargs; k++) {
-//				i = def->sorted_args[k];
-//				arg = args[i];
-//				ts = &s->temps[arg];
-//				fprintf(stderr, "%s ", tcg_get_arg_str_idx(s, buf, sizeof(buf),
-//						arg));
-//			}
-//		for(k = 0; k < nb_iargs; k++) {
-//			i = def->sorted_args[nb_oargs+k];
-//			arg = args[i];
-//			ts = &s->temps[arg];
-//			fprintf(stderr, "%s ", tcg_get_arg_str_idx(s, buf, sizeof(buf),
-//					arg));
-//		}
-//		for(k = 0; k < def->nb_cargs; k++)
-//			fprintf(stderr, "0x%lx ", new_args[nb_iargs+nb_oargs+k]);
-//		fprintf(stderr, ")\n");
-//    }
-
 #ifdef USE_ALIAS_ANALYSIS
-    int is_ld = (opc == INDEX_op_ld_i32 || opc == INDEX_op_ld_i64);//(def->name[0] == 'l' && def->name[1] == 'd');
-    int is_st = (opc == INDEX_op_st_i32 || opc == INDEX_op_st_i64);//(def->name[0] == 's' && def->name[1] == 't');
+    int is_ld = (opc == INDEX_op_ld_i32 || opc == INDEX_op_ld_i64);
+    int is_st = (opc == INDEX_op_st_i32 || opc == INDEX_op_st_i64);
 #endif
 
     /* satisfy input constraints */ 
@@ -2258,26 +2221,15 @@ static void tcg_reg_alloc_op(TCGContext *s,
         	int offset = s->alias[ts->reg] + new_args[nb_iargs+nb_oargs];
         	uint32_t temp_no = (offset - s->reg_offset) / s->reg_size;
         	if(offset >= s->reg_offset && temp_no < s->reg_num && ((offset - s->reg_offset) % s->reg_size) == 0) {
-#ifdef DEBUG_ALIAS
-        		fprintf(stderr, "(0x%x - 0x%x) mod %u = %u\n",
-        				offset, s->reg_offset,
-						s->reg_size,
-						(offset - s->reg_offset) % s->reg_size);
-        		fprintf(stderr, "store[0x%x] = 0x%d\n", ts->reg, s->store[ts->reg]);
-#endif
         		if(!s->store[temp_no])
         			tcg_sync_temp(s, s->reg_temp_start + temp_no);
         		s->store[temp_no] = 0;
         	}
         }
-#endif
-#ifdef USE_ALIAS_ANALYSIS
         if(is_st && !k) {
-//        	fprintf(stderr, "Store instr: reg = %d\n", ts->reg);
         	int alias_num = (new_args[nb_iargs+nb_oargs] - s->reg_offset) / s->reg_size;
         	if(s->alias[ts->reg] >= 0) {
 				s->store[alias_num] = 1;
-//				fprintf(stderr, "store[%d] = %d\n", alias_num, s->store[alias_num]);
 				temp_dead(s, args[i]);
         	}
         }
