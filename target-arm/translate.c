@@ -38,7 +38,8 @@
 #include "trace-tcg.h"
 
 //#define ENABLE_SYNC_TEMP
-//#define REPLACE_LD_REG
+//#define REPLACE_LD_MOV
+//#define REPLACE_LD_ADD
 
 #define ENABLE_ARCH_4T    arm_feature(env, ARM_FEATURE_V4T)
 #define ENABLE_ARCH_5     arm_feature(env, ARM_FEATURE_V5)
@@ -1265,11 +1266,15 @@ static TCGv_i32 neon_load_reg(int reg, int pass)
 #ifdef ENABLE_SYNC_TEMP
     tcg_gen_sync_temp_v128(cpu_Q[reg >> 1]);
 #endif
-#ifdef REPLACE_LD_REG
+#if defined(REPLACE_LD_MOV)
     TCGv_ptr tmp1 = tcg_temp_new_ptr();
-//    tcg_gen_mov_ptr(tmp1, cpu_env);
     tcg_gen_addi_ptr(tmp1, cpu_env, 0x10);
     tcg_gen_ld_i32(tmp, tmp1, neon_reg_offset(reg, pass)-0x10);
+    tcg_temp_free_ptr(tmp1);
+#elif defined(REPLACE_LD_ADD)
+    TCGv_ptr tmp1 = tcg_temp_new_ptr();
+    tcg_gen_mov_ptr(tmp1, cpu_env);
+    tcg_gen_ld_i32(tmp, tmp1, neon_reg_offset(reg, pass));
     tcg_temp_free_ptr(tmp1);
 #else
     tcg_gen_ld_i32(tmp, cpu_env, neon_reg_offset(reg, pass));
