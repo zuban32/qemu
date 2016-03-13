@@ -114,13 +114,13 @@ void arm_translate_init(void)
     cpu_VF = tcg_global_mem_new_i32(TCG_AREG0, offsetof(CPUARMState, VF), "VF");
     cpu_ZF = tcg_global_mem_new_i32(TCG_AREG0, offsetof(CPUARMState, ZF), "ZF");
 
-    tcg_ctx.reg_offset = offsetof(CPUARMState, vfp.regs[0]);
+    tcg_ctx.vec_reg_offset = offsetof(CPUARMState, vfp.regs[0]);
     tcg_ctx.reg_size = 2 * sizeof(((CPUARMState *)0)->vfp.regs[0]);
     tcg_ctx.reg_num = 16;
     tcg_ctx.reg_temp_start = (uint64_t) cpu_Q[0];
 
 
-    tcg_ctx.store = calloc(16, sizeof(*(tcg_ctx.store)));
+    tcg_ctx.store = calloc(tcg_ctx.reg_num, sizeof(*(tcg_ctx.store)));
 
 //    fprintf(stderr, "reg_off = 0x%x, reg_size = %u\n", tcg_ctx.reg_offset, tcg_ctx.reg_size);
 
@@ -1263,10 +1263,9 @@ neon_reg_offset (int reg, int n)
 static TCGv_i32 neon_load_reg(int reg, int pass)
 {
     TCGv_i32 tmp = tcg_temp_new_i32();
-#ifdef ENABLE_SYNC_TEMP
+#if defined(ENABLE_SYNC_TEMP)
     tcg_gen_sync_temp_v128(cpu_Q[reg >> 1]);
-#endif
-#if defined(REPLACE_LD_MOV)
+#elif defined(REPLACE_LD_MOV)
     TCGv_ptr tmp1 = tcg_temp_new_ptr();
     tcg_gen_addi_ptr(tmp1, cpu_env, 0x10);
     tcg_gen_ld_i32(tmp, tmp1, neon_reg_offset(reg, pass)-0x10);

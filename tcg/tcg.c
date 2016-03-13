@@ -374,6 +374,10 @@ void tcg_context_init(TCGContext *s)
                             (gpointer)&all_helpers[i]);
     }
 
+#ifdef USE_ALIAS_ANALYSIS
+    s->alias = calloc(TCG_MAX_TEMPS, sizeof(*s->alias));
+#endif
+
     tcg_target_init(s);
 }
 

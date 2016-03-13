@@ -551,7 +551,7 @@ struct TCGContext {
 
     uint8_t v128_swap[16 * 3];
 
-    uint32_t reg_offset;
+    uint32_t vec_reg_offset;
     uint32_t reg_size;
     uint32_t reg_num;
     uint32_t reg_temp_start;
