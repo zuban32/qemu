@@ -163,6 +163,15 @@ typedef uint64_t tcg_insn_unit;
 #endif
 
 
+#define USE_ALIAS_ANALYSIS
+
+#ifdef USE_ALIAS_ANALYSIS
+#define ALIAS_VALID		0
+#define ALIAS_NO 		-1
+#define ALIAS_UNDEF 	-2
+#endif
+
+
 typedef struct TCGRelocation {
     struct TCGRelocation *next;
     int type;
@@ -467,6 +476,12 @@ typedef struct TCGTempSet {
     unsigned long l[BITS_TO_LONGS(TCG_MAX_TEMPS)];
 } TCGTempSet;
 
+typedef struct TCGAliasInfo {
+	tcg_target_ulong offset;
+	int8_t state;
+	uint8_t store;
+} TCGAliasInfo;
+
 struct TCGContext {
     uint8_t *pool_cur, *pool_end;
     TCGPool *pool_first, *pool_current, *pool_first_large;
@@ -557,8 +572,7 @@ struct TCGContext {
     uint32_t reg_temp_start;
 
 //#ifdef USE_ALIAS_ANALYSIS
-    int8_t *alias;
-    int8_t *store;
+    TCGAliasInfo *alias;
 //#endif
 
     TBContext tb_ctx;

@@ -38,8 +38,9 @@
 #include "trace-tcg.h"
 
 //#define ENABLE_SYNC_TEMP
-//#define REPLACE_LD_MOV
 //#define REPLACE_LD_ADD
+//#define REPLACE_LD_SUB
+//#define REPLACE_LD_MOV
 
 #define ENABLE_ARCH_4T    arm_feature(env, ARM_FEATURE_V4T)
 #define ENABLE_ARCH_5     arm_feature(env, ARM_FEATURE_V5)
@@ -118,11 +119,6 @@ void arm_translate_init(void)
     tcg_ctx.reg_size = 2 * sizeof(((CPUARMState *)0)->vfp.regs[0]);
     tcg_ctx.reg_num = 16;
     tcg_ctx.reg_temp_start = (uint64_t) cpu_Q[0];
-
-
-    tcg_ctx.store = calloc(tcg_ctx.reg_num, sizeof(*(tcg_ctx.store)));
-
-//    fprintf(stderr, "reg_off = 0x%x, reg_size = %u\n", tcg_ctx.reg_offset, tcg_ctx.reg_size);
 
     cpu_exclusive_addr = tcg_global_mem_new_i64(TCG_AREG0,
         offsetof(CPUARMState, exclusive_addr), "exclusive_addr");
@@ -1265,12 +1261,17 @@ static TCGv_i32 neon_load_reg(int reg, int pass)
     TCGv_i32 tmp = tcg_temp_new_i32();
 #if defined(ENABLE_SYNC_TEMP)
     tcg_gen_sync_temp_v128(cpu_Q[reg >> 1]);
-#elif defined(REPLACE_LD_MOV)
-    TCGv_ptr tmp1 = tcg_temp_new_ptr();
-    tcg_gen_addi_ptr(tmp1, cpu_env, 0x10);
-    tcg_gen_ld_i32(tmp, tmp1, neon_reg_offset(reg, pass)-0x10);
-    tcg_temp_free_ptr(tmp1);
 #elif defined(REPLACE_LD_ADD)
+    TCGv_ptr tmp1 = tcg_temp_new_ptr();
+    tcg_gen_addi_ptr(tmp1, cpu_env, 0x50);
+    tcg_gen_ld_i32(tmp, tmp1, neon_reg_offset(reg, pass)-0x50);
+    tcg_temp_free_ptr(tmp1);
+#elif defined(REPLACE_LD_SUB)
+    TCGv_ptr tmp1 = tcg_temp_new_ptr();
+    tcg_gen_subi_ptr(tmp1, cpu_env, 0x50);
+    tcg_gen_ld_i32(tmp, tmp1, neon_reg_offset(reg, pass)+0x50);
+    tcg_temp_free_ptr(tmp1);
+#elif defined(REPLACE_LD_MOV)
     TCGv_ptr tmp1 = tcg_temp_new_ptr();
     tcg_gen_mov_ptr(tmp1, cpu_env);
     tcg_gen_ld_i32(tmp, tmp1, neon_reg_offset(reg, pass));

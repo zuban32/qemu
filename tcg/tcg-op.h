@@ -2825,6 +2825,8 @@ static inline void tcg_gen_qemu_st64(TCGv_i64 arg, TCGv addr, int mem_index)
     tcg_gen_add_i64(TCGV_PTR_TO_NAT(R), TCGV_PTR_TO_NAT(A), TCGV_PTR_TO_NAT(B))
 # define tcg_gen_addi_ptr(R, A, B) \
     tcg_gen_addi_i64(TCGV_PTR_TO_NAT(R), TCGV_PTR_TO_NAT(A), (B))
+# define tcg_gen_subi_ptr(R, A, B) \
+    tcg_gen_subi_i64(TCGV_PTR_TO_NAT(R), TCGV_PTR_TO_NAT(A), (B))
 # define tcg_gen_movi_ptr(R, B) \
     tcg_gen_movi_i64(TCGV_PTR_TO_NAT(R), (B))
 # define tcg_gen_ext_i32_ptr(R, A) \

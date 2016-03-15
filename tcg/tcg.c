@@ -31,13 +31,6 @@
 /* Define to jump the ELF file used to communicate with GDB.  */
 #undef DEBUG_JIT
 
-#define USE_ALIAS_ANALYSIS
-
-#ifdef USE_ALIAS_ANALYSIS
-#define ALIAS_UNDEF -2
-#define ALIAS_NO 	-1
-#endif
-
 #if !defined(CONFIG_DEBUG_TCG) && !defined(NDEBUG)
 /* define it to suppress various consistency checks (faster) */
 #define NDEBUG
@@ -380,9 +373,10 @@ void tcg_context_init(TCGContext *s)
 #ifdef USE_ALIAS_ANALYSIS
     s->alias = calloc(TCG_MAX_TEMPS, sizeof(*s->alias));
     for(i = 0; i < TCG_MAX_TEMPS; i++) {
-    	s->alias[i] = ALIAS_NO;
+    	s->alias[i].state = ALIAS_NO;
     }
-    s->alias[GET_TCGV_PTR(s->cpu_env)] = 0;
+    s->alias[GET_TCGV_PTR(s->cpu_env)].state = ALIAS_VALID;
+    s->alias[GET_TCGV_PTR(s->cpu_env)].offset = 0;
 #endif
 
     tcg_target_init(s);
@@ -1571,7 +1565,7 @@ static void tcg_liveness_analysis(TCGContext *s)
             if(def->nb_oargs > 0 && def->nb_iargs > 0 && def->nb_cargs <= 1) {
             	int arg_ind = 1;
             	TCGArg arg = args[arg_ind];
-            	if(s->alias[arg] >= 0) {
+            	if(s->alias[arg].state != ALIAS_VALID) {
             		dead_temps[arg] = 1;
             		mem_temps[arg] = 1;
             	}
@@ -1585,7 +1579,7 @@ static void tcg_liveness_analysis(TCGContext *s)
             if(def->nb_iargs >= 1 && def->nb_cargs == 1) {
             	int arg_ind = 0;
             	TCGArg arg = args[arg_ind];
-				if(s->alias[arg] >= 0) {
+				if(s->alias[arg].state == ALIAS_VALID) {
 					/* mark the temporary as dead */
 					dead_temps[arg] = 1;
 					mem_temps[arg] = 0;
@@ -2154,7 +2148,8 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
     }
 
 #ifdef USE_ALIAS_ANALYSIS
-    s->alias[args[0]] = s->alias[args[1]];
+    s->alias[args[0]].offset = s->alias[args[1]].offset;
+    s->alias[args[0]].state = s->alias[args[1]].state;
 #endif
 }
 
@@ -2162,11 +2157,12 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOpDef *def,
 static void tcg_try_sync_temp(TCGContext *s, TCGArg arg)
 {
     if(arg + s->reg_temp_start < s->nb_globals) {
-        if (s->temps[arg+s->reg_temp_start].val_type == TEMP_VAL_REG && !s->store[arg]) {
+    	TCGAliasInfo *alias = &s->alias[arg];
+        if (s->temps[arg + s->reg_temp_start].val_type == TEMP_VAL_REG && !alias->store) {
         	tcg_reg_free(s, s->temps[arg + s->reg_temp_start].reg);
         }
+        alias->store = 0;
     }
-    s->store[arg] = 0;
 }
 #endif
 
@@ -2231,8 +2227,10 @@ static void tcg_reg_alloc_op(TCGContext *s,
         assert(ts->val_type == TEMP_VAL_REG);
 #ifdef USE_ALIAS_ANALYSIS
         if(is_ld) {
-        	if(s->alias[arg] >= 0) {
-				int offset = s->alias[arg] + new_args[nb_iargs+nb_oargs];
+        	TCGAliasInfo *alias = &s->alias[arg];
+        	TCGAliasInfo *oalias = &s->alias[args[0]];
+        	if(alias->state == ALIAS_VALID) {
+				int offset = alias->offset + new_args[nb_iargs+nb_oargs];
 				uint32_t temp_no = (offset - s->vec_reg_offset) / s->reg_size;
 				if(offset >= s->vec_reg_offset && temp_no < s->reg_num) {
 					tcg_try_sync_temp(s, temp_no);
@@ -2241,18 +2239,17 @@ static void tcg_reg_alloc_op(TCGContext *s,
 						temp_no + 1 < s->reg_num) {
 					tcg_try_sync_temp(s, temp_no + 1);
 				}
-        	} else if (s->alias[arg] == ALIAS_UNDEF) {
+        	} else if (alias->state == ALIAS_UNDEF) {
         		int j;
         		for(j = 0; j < s->reg_num; j++) {
         			tcg_try_sync_temp(s, j);
         		}
         	}
-        	s->alias[args[0]] = ALIAS_UNDEF;
+        	oalias->state = ALIAS_UNDEF;
         }
         if(is_st && !k) {
-        	if(s->alias[arg] >= 0) {
-            	int alias_num = (s->alias[arg] + new_args[nb_iargs+nb_oargs] - s->vec_reg_offset) / s->reg_size;
-				s->store[alias_num] = 1;
+        	if(s->alias[arg].state == ALIAS_VALID) {
+				s->alias[arg].store = 1;
         	}
         }
 
@@ -2352,20 +2349,19 @@ static void tcg_reg_alloc_op(TCGContext *s,
 
 
 #ifdef USE_ALIAS_ANALYSIS
-    if(nb_oargs > 0 && nb_iargs > 0) {
+    if(nb_oargs > 0 && nb_iargs > 1) {
     	int ovar = args[0];
     	int ivar = args[nb_oargs];
     	int ivar1 = args[nb_oargs+1];
-    	int cvar = args[nb_oargs + nb_iargs];
-    	TCGTemp *cts = &s->temps[cvar];
-    	if(s->alias[ivar] == ALIAS_NO || s->alias[ivar] == ALIAS_UNDEF ||
-    			(nb_iargs > 1 && (s->alias[ivar1] == ALIAS_NO || s->alias[ivar1] == ALIAS_UNDEF))) {
-    		s->alias[ovar] = ALIAS_UNDEF;
-    	} else if(s->alias[ivar] >= 0) {
-    		target_ulong offset = (nb_iargs < 2 && (cts->val_type == TEMP_VAL_CONST || cts->val_type == TEMP_VAL_DEAD)) ?
-    				cts->val :
-					s->vec_reg_offset + s->alias[ivar1];
-    		target_ulong tmp_res = s->vec_reg_offset + s->alias[ivar];
+    	int is_const = (s->temps[ivar1].val_type == TEMP_VAL_CONST || s->temps[ivar1].val_type == TEMP_VAL_DEAD);
+    	if(s->alias[ivar].state != ALIAS_VALID ||
+    			(!is_const && (s->alias[ivar1].state == ALIAS_NO || s->alias[ivar1].state == ALIAS_UNDEF))) {
+    		s->alias[ovar].state = ALIAS_UNDEF;
+    	} else if(s->alias[ivar].state == ALIAS_VALID) {
+    		target_ulong offset = (is_const) ?
+    				s->temps[ivar1].val :
+					s->vec_reg_offset + s->alias[ivar1].offset;
+    		target_ulong tmp_res = s->vec_reg_offset + s->alias[ivar].offset;
     		switch(opc) {
     		case INDEX_op_add_i32:
     		case INDEX_op_add_i64:
@@ -2373,7 +2369,7 @@ static void tcg_reg_alloc_op(TCGContext *s,
 				goto alias_ops_end;
 			case INDEX_op_sub_i32:
 			case INDEX_op_sub_i64:
-				tmp_res -= offset;
+//				tmp_res -= offset;
 				goto alias_ops_end;
 			case INDEX_op_and_i32:
 			case INDEX_op_and_i64:
@@ -2387,11 +2383,8 @@ static void tcg_reg_alloc_op(TCGContext *s,
 			case INDEX_op_xor_i64:
 				tmp_res ^= offset;
 			alias_ops_end:
-				if(tmp_res < s->vec_reg_offset || tmp_res >= s->vec_reg_offset + s->reg_num * s->reg_size) {
-					s->alias[ovar] = ALIAS_NO;
-				} else {
-					s->alias[ovar] = tmp_res - s->vec_reg_offset;
-				}
+				s->alias[ovar].offset = tmp_res - s->vec_reg_offset;
+				s->alias[ovar].state = ALIAS_VALID;
 				break;
 			default:
 				break;
