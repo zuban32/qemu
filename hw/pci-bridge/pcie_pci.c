@@ -3,6 +3,7 @@
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_bus.h"
 #include "hw/pci/pci_bridge.h"
+#include "hw/pci/msi.h"
 
 typedef struct PCIEPCIBridge {
     /*< private >*/
