@@ -14,9 +14,11 @@ typedef struct PCIEPCIBridge {
 static void pciepci_bridge_realize(PCIDevice *d, Error **errp)
 {
 	int rc;
+    Error *local_err = NULL;
+
     pci_bridge_initfn(d, TYPE_PCI_BUS);
 
-    rc = pci_bridge_ssvid_init(d, 0x40, 0, 0x32);
+    rc = pci_bridge_ssvid_init(d, 0, 0, 0x32);
     if(rc < 0) {
     	error_setg(errp, "Can't add SSVID, error %d", rc);
     	goto error;
@@ -26,6 +28,11 @@ static void pciepci_bridge_realize(PCIDevice *d, Error **errp)
     if(rc < 0) {
     	error_setg(errp, "Can't add PCIE-PCI bridge capability, error %d", rc);
     	goto error;
+    }
+
+    rc = msi_init(d, 0, 1, 1, 1, &local_err);
+    if (rc < 0) {
+    	error_propagate(errp, local_err);
     }
 
     return;
