@@ -42,7 +42,7 @@ struct PCIBridgeDev {
 
     MemoryRegion bar;
     uint8_t chassis_nr;
-#define PCI_BRIDGE_DEV_F_SHPC_REQ 0
+#define PCI_BRIDGE_DEV_F_SHPC_REQ 1
     uint32_t flags;
 
     OnOffAuto msi;

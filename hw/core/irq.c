@@ -42,6 +42,7 @@ void qemu_set_irq(qemu_irq irq, int level)
     if (!irq)
         return;
 
+//    fprintf(stderr, "Qemu irq: %d %d\n", irq->n, level);
     irq->handler(irq->opaque, irq->n, level);
 }
 
