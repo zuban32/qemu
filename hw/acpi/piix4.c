@@ -375,6 +375,7 @@ static void piix4_device_plug_cb(HotplugHandler *hotplug_dev,
                                  DeviceState *dev, Error **errp)
 {
     PIIX4PMState *s = PIIX4_PM(hotplug_dev);
+    fprintf(stderr, "piix4 hp cb\n");
 
     if (s->acpi_memory_hotplug.is_enabled &&
         object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM)) {
@@ -386,6 +387,7 @@ static void piix4_device_plug_cb(HotplugHandler *hotplug_dev,
         }
     } else if (object_dynamic_cast(OBJECT(dev), TYPE_PCI_DEVICE)) {
         if (!xen_enabled()) {
+        	fprintf(stderr, "pixx: acpi_hp\n");
             acpi_pcihp_device_plug_cb(hotplug_dev, &s->acpi_pci_hotplug, dev,
                                       errp);
         }

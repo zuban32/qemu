@@ -300,6 +300,7 @@ void acpi_pcihp_init(Object *owner, AcpiPciHpState *s, PCIBus *root_bus,
 
     s->root= root_bus;
     s->legacy_piix = !bridges_enabled;
+    fprintf(stderr, "bridges_enabled = %d\n", bridges_enabled);
 
     memory_region_init_io(&s->io, owner, &acpi_pcihp_io_ops, s,
                           "acpi-pci-hotplug", s->io_len);

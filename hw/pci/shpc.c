@@ -153,6 +153,7 @@ static void shpc_interrupt_update(PCIDevice *d)
     int level = 0;
     uint32_t serr_int;
     uint32_t int_locator = 0;
+    fprintf(stderr, "shpc int update\n");
 
     /* Update interrupt locator register */
     for (slot = 0; slot < shpc->nslots; ++slot) {
@@ -169,10 +170,13 @@ static void shpc_interrupt_update(PCIDevice *d)
     }
     pci_set_long(shpc->config + SHPC_INT_LOCATOR, int_locator);
     level = (!(serr_int & SHPC_INT_DIS) && int_locator) ? 1 : 0;
-    if (msi_enabled(d) && shpc->msi_requested != level)
+    if (msi_enabled(d) && shpc->msi_requested != level) {
+        fprintf(stderr, "msi notify\n");
         msi_notify(d, 0);
-    else
+    } else {
+    	fprintf(stderr, "set irq %d\n", level);
         pci_set_irq(d, level);
+    }
     shpc->msi_requested = level;
 }
 
@@ -508,6 +512,7 @@ static void shpc_device_hotplug_common(PCIDevice *affected_dev, int *slot,
 void shpc_device_hotplug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
                             Error **errp)
 {
+	fprintf(stderr, "shpc cb\n");
     Error *local_err = NULL;
     PCIDevice *pci_hotplug_dev = PCI_DEVICE(hotplug_dev);
     SHPCDevice *shpc = pci_hotplug_dev->shpc;
@@ -515,6 +520,7 @@ void shpc_device_hotplug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
 
     shpc_device_hotplug_common(PCI_DEVICE(dev), &slot, shpc, &local_err);
     if (local_err) {
+    	fprintf(stderr, "error\n");
         error_propagate(errp, local_err);
         return;
     }
@@ -523,6 +529,7 @@ void shpc_device_hotplug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
      * it is present on boot, no hotplug event is necessary. We do send an
      * event when the device is disabled later. */
     if (!dev->hotplugged) {
+    	fprintf(stderr, "!hotplugged\n");
         shpc_set_status(shpc, slot, 0, SHPC_SLOT_STATUS_MRL_OPEN);
         shpc_set_status(shpc, slot, SHPC_SLOT_STATUS_PRSNT_7_5W,
                         SHPC_SLOT_STATUS_PRSNT_MASK);
@@ -532,6 +539,7 @@ void shpc_device_hotplug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
     /* This could be a cancellation of the previous removal.
      * We check MRL state to figure out. */
     if (shpc_get_status(shpc, slot, SHPC_SLOT_STATUS_MRL_OPEN)) {
+    	fprintf(stderr, "open\n");
         shpc_set_status(shpc, slot, 0, SHPC_SLOT_STATUS_MRL_OPEN);
         shpc_set_status(shpc, slot, SHPC_SLOT_STATUS_PRSNT_7_5W,
                         SHPC_SLOT_STATUS_PRSNT_MASK);
@@ -540,6 +548,7 @@ void shpc_device_hotplug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
             SHPC_SLOT_EVENT_MRL |
             SHPC_SLOT_EVENT_PRESENCE;
     } else {
+    	fprintf(stderr, "cancel removal\n");
         /* Press attention button to cancel removal */
         shpc->config[SHPC_SLOT_EVENT_LATCH(slot)] |=
             SHPC_SLOT_EVENT_BUTTON;
@@ -563,6 +572,8 @@ void shpc_device_hot_unplug_request_cb(HotplugHandler *hotplug_dev,
         error_propagate(errp, local_err);
         return;
     }
+    fprintf(stderr, "shpc unplug\nslot = %d\n", slot);
+    fprintf(stderr, "device: %s\n", pci_hotplug_dev->qdev.id);
 
     shpc->config[SHPC_SLOT_EVENT_LATCH(slot)] |= SHPC_SLOT_EVENT_BUTTON;
     state = shpc_get_status(shpc, slot, SHPC_SLOT_STATE_MASK);

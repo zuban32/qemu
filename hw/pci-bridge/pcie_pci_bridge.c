@@ -53,15 +53,24 @@ static void pciepci_bridge_realize(PCIDevice *d, Error **errp) {
     int rc, pos;
     Error *local_err = NULL;
 
+    pci_config_set_interrupt_pin(d->config, 1);
     pci_bridge_initfn(d, TYPE_PCI_BUS);
 
-    rc = pci_bridge_ssvid_init(d, 0, 0, 0x32);
+    rc = pci_bridge_ssvid_init(d, 0x40, 0, 0x32);
     if (rc < 0) {
         error_setg(errp, "Can't add SSVID, error %d", rc);
         goto error;
     }
 
-    d->config[PCI_INTERRUPT_PIN] = 0x1;
+    rc = msi_init(d, 0, 1, false, 1, &local_err);
+    if (rc) {
+    	fprintf(stderr, "pcie-pci bridge: msi error\n");
+        error_propagate(errp, local_err);
+    } else {
+    	fprintf(stderr, "bridge: msi enabled = %d\n", msi_enabled(d));
+    	fprintf(stderr, "bridge: msi present = %d\n", msi_present(d));
+    }
+
     memory_region_init(&bridge_dev->shpc_bar, OBJECT(d), "shpc-bar",
             shpc_bar_size(d));
     rc = shpc_init(d, &br->sec_bus, &bridge_dev->shpc_bar, 0);
@@ -69,10 +78,10 @@ static void pciepci_bridge_realize(PCIDevice *d, Error **errp) {
         goto error;
     }
 
-//    rc = slotid_cap_init(d, 0, 1, 0);
-//    if (rc) {
-//        goto error;
-//    }
+    rc = slotid_cap_init(d, 0, 1, 0);
+    if (rc) {
+        goto error;
+    }
 
     rc = pcie_cap_init(d, 0, PCI_EXP_TYPE_PCI_BRIDGE, 0);
     if (rc < 0) {
@@ -92,11 +101,6 @@ static void pciepci_bridge_realize(PCIDevice *d, Error **errp) {
     if (rc < 0) {
         error_propagate(errp, local_err);
         goto error;
-    }
-
-    rc = msi_init(d, 0, 1, 1, 1, &local_err);
-    if (rc < 0) {
-        error_propagate(errp, local_err);
     }
 
     pci_register_bar(d, 0, PCI_BASE_ADDRESS_SPACE_MEMORY |
@@ -125,8 +129,8 @@ static void pcie_pci_bridge_write_config(PCIDevice *d,
         uint32_t address, uint32_t val, int len)
 {
     pci_bridge_write_config(d, address, val, len);
-    msi_write_config(d, address, val, len);
     shpc_cap_write_config(d, address, val, len);
+//    msi_write_config(d, address, val, len);
 }
 
 static void pci_bridge_dev_hotplug_cb(HotplugHandler *hotplug_dev,
@@ -146,6 +150,7 @@ static void pci_bridge_dev_hot_unplug_request_cb(HotplugHandler *hotplug_dev,
         DeviceState *dev,
         Error **errp)
 {
+	fprintf(stderr, "pcie_bridge: unplug rq\n");
     PCIDevice *pci_hotplug_dev = PCI_DEVICE(hotplug_dev);
 
     if (!shpc_present(pci_hotplug_dev)) {

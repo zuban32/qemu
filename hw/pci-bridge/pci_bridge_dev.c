@@ -101,6 +101,7 @@ static int pci_bridge_dev_initfn(PCIDevice *dev)
         pci_register_bar(dev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY |
                          PCI_BASE_ADDRESS_MEM_TYPE_64, &bridge_dev->bar);
     }
+//    shpc_reset(dev);
     return 0;
 
 msi_error:
@@ -186,6 +187,7 @@ static const VMStateDescription pci_bridge_dev_vmstate = {
 static void pci_bridge_dev_hotplug_cb(HotplugHandler *hotplug_dev,
                                       DeviceState *dev, Error **errp)
 {
+	fprintf(stderr, "pci bridge hp cb\n");
     PCIDevice *pci_hotplug_dev = PCI_DEVICE(hotplug_dev);
 
     if (!shpc_present(pci_hotplug_dev)) {

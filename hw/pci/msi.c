@@ -262,6 +262,7 @@ void msi_uninit(struct PCIDevice *dev)
 
 void msi_reset(PCIDevice *dev)
 {
+	fprintf(stderr, "MSI reset: %s\n", dev->qdev.id);
     uint16_t flags;
     bool msi64bit;
 
@@ -284,6 +285,7 @@ void msi_reset(PCIDevice *dev)
         pci_set_long(dev->config + msi_pending_off(dev, msi64bit), 0);
     }
     MSI_DEV_PRINTF(dev, "reset\n");
+    fprintf(stderr, "MSI reset: enabled = %d\n", msi_enabled(dev));
 }
 
 static bool msi_is_masked(const PCIDevice *dev, unsigned int vector)

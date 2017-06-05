@@ -844,16 +844,19 @@ static DeviceState *find_device_state(const char *id, Error **errp)
 
 void qdev_unplug(DeviceState *dev, Error **errp)
 {
+	fprintf(stderr, "qdeve_unplug\n");
     DeviceClass *dc = DEVICE_GET_CLASS(dev);
     HotplugHandler *hotplug_ctrl;
     HotplugHandlerClass *hdc;
 
     if (dev->parent_bus && !qbus_is_hotpluggable(dev->parent_bus)) {
+    	fprintf(stderr, "bus not hotpluggable\n");
         error_setg(errp, QERR_BUS_NO_HOTPLUG, dev->parent_bus->name);
         return;
     }
 
     if (!dc->hotpluggable) {
+    	fprintf(stderr, "device not hotpluggable\n");
         error_setg(errp, QERR_DEVICE_NO_HOTPLUG,
                    object_get_typename(OBJECT(dev)));
         return;
