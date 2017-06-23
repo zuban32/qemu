@@ -324,6 +324,7 @@ PCIBus *i440fx_init(const char *host_type, const char *pci_type,
                     MemoryRegion *ram_memory);
 
 PCIBus *find_i440fx(void);
+PCIBus *find_q35(void);
 /* piix4.c */
 extern PCIDevice *piix4_dev;
 int piix4_init(PCIBus *bus, ISABus **isa_bus, int devfn);

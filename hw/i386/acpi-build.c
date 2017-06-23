@@ -500,7 +500,8 @@ static void *acpi_set_bsel(PCIBus *bus, void *opaque)
 
 static void acpi_set_pci_info(void)
 {
-    PCIBus *bus = find_i440fx(); /* TODO: Q35 support */
+    PCIBus *bus = find_q35(); /* TODO: Q35 support */
+    assert(bus);
     unsigned bsel_alloc = ACPI_PCIHP_BSEL_DEFAULT;
 
     if (bus) {

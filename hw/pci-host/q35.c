@@ -37,6 +37,14 @@
  * Q35 host
  */
 
+PCIBus *find_q35(void)
+{
+    PCIHostState *s = OBJECT_CHECK(PCIHostState,
+                                   object_resolve_path("/machine/q35", NULL),
+                                   TYPE_PCI_HOST_BRIDGE);
+    return s ? s->bus : NULL;
+}
+
 static void q35_host_realize(DeviceState *dev, Error **errp)
 {
     PCIHostState *pci = PCI_HOST_BRIDGE(dev);
