@@ -28,14 +28,11 @@
 #include "hw/pci/pci_bus.h"
 #include "hw/pci/pci_bridge.h"
 #include "hw/pci/msi.h"
-#include "hw/pci/shpc.h"
 #include "hw/pci/slotid_cap.h"
 
 typedef struct PCIEPCIBridge {
     /*< private >*/
     PCIBridge parent_obj;
-
-    MemoryRegion shpc_bar;
 
 #define PCI_BRIDGE_DEV_F_SHPC_REQ 0
     uint32_t flags;
@@ -61,19 +58,6 @@ static void pciepci_bridge_realize(PCIDevice *d, Error **errp) {
         goto error;
     }
 
-    d->config[PCI_INTERRUPT_PIN] = 0x1;
-    memory_region_init(&bridge_dev->shpc_bar, OBJECT(d), "shpc-bar",
-            shpc_bar_size(d));
-    rc = shpc_init(d, &br->sec_bus, &bridge_dev->shpc_bar, 0);
-    if (rc) {
-        goto error;
-    }
-
-//    rc = slotid_cap_init(d, 0, 1, 0);
-//    if (rc) {
-//        goto error;
-//    }
-
     rc = pcie_cap_init(d, 0, PCI_EXP_TYPE_PCI_BRIDGE, 0);
     if (rc < 0) {
         error_setg(errp, "Can't add PCIE-PCI bridge capability, error %d", rc);
@@ -98,9 +82,6 @@ static void pciepci_bridge_realize(PCIDevice *d, Error **errp) {
     if (rc < 0) {
         error_propagate(errp, local_err);
     }
-
-    pci_register_bar(d, 0, PCI_BASE_ADDRESS_SPACE_MEMORY |
-                     PCI_BASE_ADDRESS_MEM_TYPE_64, &bridge_dev->shpc_bar);
 
     return;
 
@@ -179,7 +160,6 @@ static void pciepci_bridge_class_init(ObjectClass *klass, void *data) {
     k->is_bridge = 1;
     k->vendor_id = PCI_VENDOR_ID_REDHAT;
     k->device_id = PCI_DEVICE_ID_REDHAT_PCIE_BRIDGE;
-//    k->class_id = PCI_CLASS_BRIDGE_PCI;
     k->realize = pciepci_bridge_realize;
     k->exit = pciepci_bridge_exit;
     k->config_write = pcie_pci_bridge_write_config;
