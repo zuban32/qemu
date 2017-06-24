@@ -574,9 +574,19 @@ static const MemoryRegionOps rcrb_mmio_ops = {
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
+static void ich9_update_bus_hotplug(PCIBus *pci_bus, void *opaque)
+{
+    ICH9LPCState *s = opaque;
+
+    /* pci_bus cannot outlive PIIX4PMState, because /machine keeps it alive
+     * and it's not hot-unpluggable */
+    qbus_set_hotplug_handler(BUS(pci_bus), DEVICE(s), NULL);
+}
+
 static void ich9_lpc_machine_ready(Notifier *n, void *opaque)
 {
     ICH9LPCState *s = container_of(n, ICH9LPCState, machine_ready);
+    PCIDevice *d = PCI_DEVICE(s);
     MemoryRegion *io_as = pci_address_space_io(&s->d);
     uint8_t *pci_conf;
 
@@ -597,6 +607,8 @@ static void ich9_lpc_machine_ready(Notifier *n, void *opaque)
         /* floppy */
         pci_conf[0x82] |= 0x08;
     }
+
+    pci_for_each_bus(d->bus, ich9_update_bus_hotplug, s);
 }
 
 /* reset control */

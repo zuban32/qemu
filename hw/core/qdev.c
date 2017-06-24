@@ -256,9 +256,11 @@ void qdev_set_legacy_instance_id(DeviceState *dev, int alias_id,
 
 HotplugHandler *qdev_get_hotplug_handler(DeviceState *dev)
 {
+	fprintf(stderr, "Getting hotplug handler\n");
     HotplugHandler *hotplug_ctrl = NULL;
 
     if (dev->parent_bus && dev->parent_bus->hotplug_handler) {
+    	fprintf(stderr, "Parent bus handler: %s\n", dev->parent_bus->name);
         hotplug_ctrl = dev->parent_bus->hotplug_handler;
     } else if (object_dynamic_cast(qdev_get_machine(), TYPE_MACHINE)) {
         MachineState *machine = MACHINE(qdev_get_machine());
@@ -266,6 +268,9 @@ HotplugHandler *qdev_get_hotplug_handler(DeviceState *dev)
 
         if (mc->get_hotplug_handler) {
             hotplug_ctrl = mc->get_hotplug_handler(machine, dev);
+        	fprintf(stderr, "Machine handler handler\n");
+        } else {
+        	fprintf(stderr, "No machine handler\n");
         }
     }
     return hotplug_ctrl;
@@ -888,6 +893,10 @@ static void device_set_realized(Object *obj, bool value, Error **errp)
     if (dev->hotplugged && !dc->hotpluggable) {
         error_setg(errp, QERR_DEVICE_NO_HOTPLUG, object_get_typename(obj));
         return;
+    }
+
+    if (dev->hotplugged) {
+    	fprintf(stderr, "Realize hp device: %s\n", dev->id);
     }
 
     if (value && !dev->realized) {

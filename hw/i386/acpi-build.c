@@ -500,8 +500,14 @@ static void *acpi_set_bsel(PCIBus *bus, void *opaque)
 
 static void acpi_set_pci_info(void)
 {
-    PCIBus *bus = find_q35(); /* TODO: Q35 support */
-    assert(bus);
+    Object *piix = piix4_pm_find();
+    Object *lpc = ich9_lpc_find();
+    PCIBus *bus = NULL;
+    if(piix) {
+    	bus = find_i440fx();
+    } else if(lpc) {
+    	bus = find_q35();
+    }
     unsigned bsel_alloc = ACPI_PCIHP_BSEL_DEFAULT;
 
     if (bus) {
@@ -1935,6 +1941,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
         build_hpet_aml(dsdt);
         build_q35_isa_bridge(dsdt);
         build_isa_devices_aml(dsdt);
+        build_piix4_pci_hotplug(dsdt);
         build_q35_pci0_int(dsdt);
     }
 

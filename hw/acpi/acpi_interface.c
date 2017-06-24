@@ -9,6 +9,7 @@ void acpi_send_event(DeviceState *dev, AcpiEventStatusBits event)
         AcpiDeviceIf *adev = ACPI_DEVICE_IF(dev);
         adevc->send_event(adev, event);
     }
+    fprintf(stderr, "can't send event\n");
 }
 
 static void register_types(void)

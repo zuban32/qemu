@@ -35,6 +35,7 @@
 #include "hw/acpi/tco.h"
 #include "sysemu/kvm.h"
 #include "exec/address-spaces.h"
+#include "hw/xen/xen.h"
 
 #include "hw/i386/ich9.h"
 #include "hw/mem/pc-dimm.h"
@@ -259,6 +260,7 @@ static void pm_reset(void *opaque)
     pm->smi_en_wmask = ~0;
 
     acpi_update_sci(&pm->acpi_regs, pm->irq);
+    acpi_pcihp_reset(&pm->acpi_pci_hotplug);
 }
 
 static void pm_powerdown_req(Notifier *n, void *opaque)
@@ -300,6 +302,9 @@ void ich9_pm_init(PCIDevice *lpc_pci, ICH9LPCPMRegs *pm,
     qemu_register_reset(pm_reset, pm);
     pm->powerdown_notifier.notify = pm_powerdown_req;
     qemu_register_powerdown_notifier(&pm->powerdown_notifier);
+
+    acpi_pcihp_init(OBJECT(lpc_pci), &pm->acpi_pci_hotplug, lpc_pci->bus, &pm->io,
+                    true);
 
     legacy_acpi_cpu_hotplug_init(pci_address_space_io(lpc_pci),
         OBJECT(lpc_pci), &pm->gpe_cpu, ICH9_CPU_HOTPLUG_IO_BASE);
@@ -487,26 +492,34 @@ void ich9_pm_add_properties(Object *obj, ICH9LPCPMRegs *pm, Error **errp)
 void ich9_pm_device_plug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
                             Error **errp)
 {
-    ICH9LPCState *lpc = ICH9_LPC_DEVICE(hotplug_dev);
+	ICH9LPCState *lpc = ICH9_LPC_DEVICE(hotplug_dev);
+	fprintf(stderr, "ich9 hp req\n");
 
-    if (lpc->pm.acpi_memory_hotplug.is_enabled &&
-        object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM)) {
-        if (object_dynamic_cast(OBJECT(dev), TYPE_NVDIMM)) {
-            nvdimm_acpi_plug_cb(hotplug_dev, dev);
-        } else {
-            acpi_memory_plug_cb(hotplug_dev, &lpc->pm.acpi_memory_hotplug,
-                                dev, errp);
-        }
-    } else if (object_dynamic_cast(OBJECT(dev), TYPE_CPU)) {
-        if (lpc->pm.cpu_hotplug_legacy) {
-            legacy_acpi_cpu_plug_cb(hotplug_dev, &lpc->pm.gpe_cpu, dev, errp);
-        } else {
-            acpi_cpu_plug_cb(hotplug_dev, &lpc->pm.cpuhp_state, dev, errp);
-        }
-    } else {
-        error_setg(errp, "acpi: device plug request for not supported device"
-                   " type: %s", object_get_typename(OBJECT(dev)));
-    }
+	if (lpc->pm.acpi_memory_hotplug.is_enabled &&
+			object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM)) {
+		if (object_dynamic_cast(OBJECT(dev), TYPE_NVDIMM)) {
+			nvdimm_acpi_plug_cb(hotplug_dev, dev);
+		} else {
+			acpi_memory_plug_cb(hotplug_dev, &lpc->pm.acpi_memory_hotplug,
+					dev, errp);
+		}
+	}
+	else if (object_dynamic_cast(OBJECT(dev), TYPE_PCI_DEVICE)) {
+		if (!xen_enabled()) {
+			fprintf(stderr, "ich9: acpi_hp\n");
+			acpi_pcihp_device_plug_cb(hotplug_dev, &lpc->pm.acpi_pci_hotplug, dev,
+					errp);
+		}
+	} else if (object_dynamic_cast(OBJECT(dev), TYPE_CPU)) {
+		if (lpc->pm.cpu_hotplug_legacy) {
+			legacy_acpi_cpu_plug_cb(hotplug_dev, &lpc->pm.gpe_cpu, dev, errp);
+		} else {
+			acpi_cpu_plug_cb(hotplug_dev, &lpc->pm.cpuhp_state, dev, errp);
+		}
+	} else {
+		error_setg(errp, "acpi: device plug request for not supported device"
+				" type: %s", object_get_typename(OBJECT(dev)));
+	}
 }
 
 void ich9_pm_device_unplug_request_cb(HotplugHandler *hotplug_dev,

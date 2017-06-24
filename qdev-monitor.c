@@ -561,6 +561,8 @@ void qdev_set_id(DeviceState *dev, const char *id)
 
 DeviceState *qdev_device_add(QemuOpts *opts, Error **errp)
 {
+	fprintf(stderr, "qdev device add\n");
+	qemu_opts_print(opts, "###\n");
     DeviceClass *dc;
     const char *driver, *path;
     DeviceState *dev;
