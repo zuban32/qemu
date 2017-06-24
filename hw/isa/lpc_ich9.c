@@ -580,7 +580,9 @@ static void ich9_update_bus_hotplug(PCIBus *pci_bus, void *opaque)
 
     /* pci_bus cannot outlive PIIX4PMState, because /machine keeps it alive
      * and it's not hot-unpluggable */
-    qbus_set_hotplug_handler(BUS(pci_bus), DEVICE(s), NULL);
+    if(!pci_bus_is_express(pci_bus)) {
+    	qbus_set_hotplug_handler(BUS(pci_bus), DEVICE(s), NULL);
+    }
 }
 
 static void ich9_lpc_machine_ready(Notifier *n, void *opaque)

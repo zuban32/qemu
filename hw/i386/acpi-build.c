@@ -144,6 +144,10 @@ static void acpi_get_pm_info(AcpiPmInfo *pm)
     if (lpc) {
         obj = lpc;
         pm->cpu_hp_io_base = ICH9_CPU_HOTPLUG_IO_BASE;
+        pm->pcihp_io_base =
+            object_property_get_int(obj, ACPI_PCIHP_IO_BASE_PROP, NULL);
+        pm->pcihp_io_len =
+            object_property_get_int(obj, ACPI_PCIHP_IO_LEN_PROP, NULL);
     }
     assert(obj);
 
@@ -185,9 +189,9 @@ static void acpi_get_pm_info(AcpiPmInfo *pm)
                                            NULL);
     pm->gpe0_blk_len = object_property_get_int(obj, ACPI_PM_PROP_GPE0_BLK_LEN,
                                                NULL);
-    pm->pcihp_bridge_en =
-        object_property_get_bool(obj, "acpi-pci-hotplug-with-bridge-support",
-                                 NULL);
+    pm->pcihp_bridge_en = true;
+//        object_property_get_bool(obj, "acpi-pci-hotplug-with-bridge-support",
+//                                 NULL);
 }
 
 static void acpi_get_misc_info(AcpiMiscInfo *info)
@@ -250,6 +254,11 @@ static void acpi_get_pci_holes(Range *hole, Range *hole64)
                       object_property_get_int(pci_host,
                                               PCI_HOST_PROP_PCI_HOLE64_END,
                                               NULL));
+}
+
+static void acpi_test_pci_bus(PCIBus *bus, void *opaque)
+{
+	*(bool *)opaque |= !pci_bus_is_express(bus);
 }
 
 #define ACPI_PORT_SMI_CMD           0x00b2 /* TODO: this is APM_CNT_IOPORT */
@@ -487,7 +496,7 @@ static void *acpi_set_bsel(PCIBus *bus, void *opaque)
     unsigned *bsel_alloc = opaque;
     unsigned *bus_bsel;
 
-    if (qbus_is_hotpluggable(BUS(bus))) {
+    if (qbus_is_hotpluggable(BUS(bus)) && !pci_bus_is_express(bus)) {
         bus_bsel = g_malloc(sizeof *bus_bsel);
 
         *bus_bsel = (*bsel_alloc)++;
@@ -500,12 +509,10 @@ static void *acpi_set_bsel(PCIBus *bus, void *opaque)
 
 static void acpi_set_pci_info(void)
 {
-    Object *piix = piix4_pm_find();
-    Object *lpc = ich9_lpc_find();
     PCIBus *bus = NULL;
-    if(piix) {
+    if(piix4_pm_find()) {
     	bus = find_i440fx();
-    } else if(lpc) {
+    } else if(ich9_lpc_find()) {
     	bus = find_q35();
     }
     unsigned bsel_alloc = ACPI_PCIHP_BSEL_DEFAULT;
@@ -575,7 +582,7 @@ static void build_append_pci_bus_devices(Aml *parent_scope, PCIBus *bus,
          * In this case they aren't themselves hot-pluggable.
          * Hotplugged bridges *are* hot-pluggable.
          */
-        bridge_in_acpi = pc->is_bridge && pcihp_bridge_en &&
+        bridge_in_acpi = pc->is_bridge && !pc->is_express && pcihp_bridge_en &&
             !DEVICE(pdev)->hotplugged;
 
         hotplug_enabled_dev = bsel && dc->hotpluggable && !bridge_in_acpi;
@@ -1636,6 +1643,7 @@ static Aml *build_q35_routing_table(const char *str)
 
 static void build_q35_pci0_int(Aml *table)
 {
+	fprintf(stderr, "building q35 pci0 int\n");
     Aml *field;
     Aml *method;
     Aml *sb_scope = aml_scope("_SB");
@@ -1656,6 +1664,7 @@ static void build_q35_pci0_int(Aml *table)
 
     method = aml_method("_PRT", 0, AML_NOTSERIALIZED);
     {
+    	fprintf(stderr, "building _prt\n");
         Aml *if_ctx;
         Aml *else_ctx;
 
@@ -1792,7 +1801,7 @@ static void build_piix4_isa_bridge(Aml *table)
     aml_append(table, scope);
 }
 
-static void build_piix4_pci_hotplug(Aml *table)
+static void build_acpi_pci_hotplug(Aml *table)
 {
     Aml *scope;
     Aml *field;
@@ -1893,7 +1902,8 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
     PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(machine);
     uint32_t nr_mem = machine->ram_slots;
     int root_bus_limit = 0xFF;
-    PCIBus *bus = NULL;
+    PCIBus *root_bus = NULL;
+    bool has_pci_bus = false;
     int i;
 
     dsdt = init_aml_allocator();
@@ -1915,20 +1925,20 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
         build_piix4_pm(dsdt);
         build_piix4_isa_bridge(dsdt);
         build_isa_devices_aml(dsdt);
-        build_piix4_pci_hotplug(dsdt);
+//        build_piix4_pci_hotplug(dsdt);
         build_piix4_pci0_int(dsdt);
     } else {
         sb_scope = aml_scope("_SB");
-        aml_append(sb_scope,
-            aml_operation_region("PCST", AML_SYSTEM_IO, aml_int(0xae00), 0x0c));
-        aml_append(sb_scope,
-            aml_operation_region("PCSB", AML_SYSTEM_IO, aml_int(0xae0c), 0x01));
-        field = aml_field("PCSB", AML_ANY_ACC, AML_NOLOCK, AML_WRITE_AS_ZEROS);
-        aml_append(field, aml_named_field("PCIB", 8));
-        aml_append(sb_scope, field);
-        aml_append(dsdt, sb_scope);
-
-        sb_scope = aml_scope("_SB");
+//        aml_append(sb_scope,
+//            aml_operation_region("PCST", AML_SYSTEM_IO, aml_int(0xae00), 0x0c));
+//        aml_append(sb_scope,
+//            aml_operation_region("PCSB", AML_SYSTEM_IO, aml_int(0xae0c), 0x01));
+//        field = aml_field("PCSB", AML_ANY_ACC, AML_NOLOCK, AML_WRITE_AS_ZEROS);
+//        aml_append(field, aml_named_field("PCIB", 8));
+//        aml_append(sb_scope, field);
+//        aml_append(dsdt, sb_scope);
+//
+//        sb_scope = aml_scope("_SB");
         dev = aml_device("PCI0");
         aml_append(dev, aml_name_decl("_HID", aml_eisaid("PNP0A08")));
         aml_append(dev, aml_name_decl("_CID", aml_eisaid("PNP0A03")));
@@ -1941,8 +1951,16 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
         build_hpet_aml(dsdt);
         build_q35_isa_bridge(dsdt);
         build_isa_devices_aml(dsdt);
-        build_piix4_pci_hotplug(dsdt);
+//        build_piix4_pci_hotplug(dsdt);
         build_q35_pci0_int(dsdt);
+    }
+
+    root_bus = PC_MACHINE(machine)->bus;
+    assert(root_bus);
+
+    pci_for_each_bus(root_bus, acpi_test_pci_bus, &has_pci_bus);
+    if(pm->pcihp_bridge_en && has_pci_bus) {
+    	build_acpi_pci_hotplug(dsdt);
     }
 
     if (pcmc->legacy_cpu_hotplug) {
@@ -1960,7 +1978,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
     {
         aml_append(scope, aml_name_decl("_HID", aml_string("ACPI0006")));
 
-        if (misc->is_piix4) {
+        if (pm->pcihp_bridge_en && has_pci_bus) {
             method = aml_method("_E01", 0, AML_NOTSERIALIZED);
             aml_append(method,
                 aml_acquire(aml_name("\\_SB.PCI0.BLCK"), 0xFFFF));
@@ -1979,8 +1997,8 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
     aml_append(dsdt, scope);
 
     crs_range_set_init(&crs_range_set);
-    bus = PC_MACHINE(machine)->bus;
-    if (bus) {
+    {
+    	PCIBus *bus = root_bus;
         QLIST_FOREACH(bus, &bus->child, sibling) {
             uint8_t bus_num = pci_bus_num(bus);
             uint8_t numa_node = pci_bus_numa_node(bus);
@@ -2093,7 +2111,9 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
     crs_range_set_free(&crs_range_set);
 
     /* reserve PCIHP resources */
-    if (pm->pcihp_io_len) {
+    printf("%d %d %d\n", pm->pcihp_io_len, pm->pcihp_bridge_en, has_pci_bus);
+    if (pm->pcihp_io_len && pm->pcihp_bridge_en && has_pci_bus) {
+        fprintf(stderr, "Adding phpr\n");
         dev = aml_device("PHPR");
         aml_append(dev, aml_name_decl("_HID", aml_string("PNP0A06")));
         aml_append(dev,
@@ -2107,6 +2127,8 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
         );
         aml_append(dev, aml_name_decl("_CRS", crs));
         aml_append(scope, dev);
+    } else {
+        fprintf(stderr, "Not adding phpr\n");
     }
     aml_append(dsdt, scope);
 
@@ -2224,38 +2246,37 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
 
     sb_scope = aml_scope("\\_SB");
     {
-        Object *pci_host;
-        PCIBus *bus = NULL;
+//        Object *pci_host;
+//        PCIBus *bus = NULL;
+    	Aml *scope = aml_scope("PCI0");
+    	bool scope_used = false;
+    	/* Scan all PCI buses. Generate tables to support hotplug. */
+//    	build_append_pci_bus_devices(scope, root_bus, pm->pcihp_bridge_en);
+    	if(pm->pcihp_bridge_en && has_pci_bus) {
+    		build_append_pci_bus_devices(scope, root_bus, pm->pcihp_bridge_en);
+    		scope_used = true;
+    	}
 
-        pci_host = acpi_get_i386_pci_host();
-        if (pci_host) {
-            bus = PCI_HOST_BRIDGE(pci_host)->bus;
-        }
-
-        if (bus) {
-            Aml *scope = aml_scope("PCI0");
-            /* Scan all PCI buses. Generate tables to support hotplug. */
-            build_append_pci_bus_devices(scope, bus, pm->pcihp_bridge_en);
-
-            if (misc->tpm_version != TPM_VERSION_UNSPEC) {
-                dev = aml_device("ISA.TPM");
-                aml_append(dev, aml_name_decl("_HID", aml_eisaid("PNP0C31")));
-                aml_append(dev, aml_name_decl("_STA", aml_int(0xF)));
-                crs = aml_resource_template();
-                aml_append(crs, aml_memory32_fixed(TPM_TIS_ADDR_BASE,
-                           TPM_TIS_ADDR_SIZE, AML_READ_WRITE));
-                /*
+    	if (misc->tpm_version != TPM_VERSION_UNSPEC) {
+    		dev = aml_device("ISA.TPM");
+    		aml_append(dev, aml_name_decl("_HID", aml_eisaid("PNP0C31")));
+    		aml_append(dev, aml_name_decl("_STA", aml_int(0xF)));
+    		crs = aml_resource_template();
+    		aml_append(crs, aml_memory32_fixed(TPM_TIS_ADDR_BASE,
+    				TPM_TIS_ADDR_SIZE, AML_READ_WRITE));
+    		/*
                     FIXME: TPM_TIS_IRQ=5 conflicts with PNP0C0F irqs,
                     Rewrite to take IRQ from TPM device model and
                     fix default IRQ value there to use some unused IRQ
-                 */
-                /* aml_append(crs, aml_irq_no_flags(TPM_TIS_IRQ)); */
-                aml_append(dev, aml_name_decl("_CRS", crs));
-                aml_append(scope, dev);
-            }
-
-            aml_append(sb_scope, scope);
-        }
+    		 */
+    		/* aml_append(crs, aml_irq_no_flags(TPM_TIS_IRQ)); */
+    		aml_append(dev, aml_name_decl("_CRS", crs));
+    		aml_append(scope, dev);
+    		scope_used = true;
+    	}
+    	if(scope_used) {
+    		aml_append(sb_scope, scope);
+    	}
     }
     aml_append(dsdt, sb_scope);
 
@@ -2815,6 +2836,7 @@ static void acpi_ram_update(MemoryRegion *mr, GArray *data)
 
 static void acpi_build_update(void *build_opaque)
 {
+	fprintf(stderr, "acpi build update\n");
     AcpiBuildState *build_state = build_opaque;
     AcpiBuildTables tables;
 
@@ -2826,6 +2848,7 @@ static void acpi_build_update(void *build_opaque)
 
     acpi_build_tables_init(&tables);
 
+    fprintf(stderr, "rebuilding tables\n");
     acpi_build(&tables, MACHINE(qdev_get_machine()));
 
     acpi_ram_update(build_state->table_mr, tables.table_data);
@@ -2850,6 +2873,7 @@ static MemoryRegion *acpi_add_rom_blob(AcpiBuildState *build_state,
                                        GArray *blob, const char *name,
                                        uint64_t max_size)
 {
+	fprintf(stderr, "Add ropm blob\n");
     return rom_add_blob(name, blob->data, acpi_data_len(blob), max_size, -1,
                         name, acpi_build_update, build_state, NULL, true);
 }
@@ -2922,6 +2946,7 @@ void acpi_setup(void)
         uint32_t rsdp_size = acpi_data_len(tables.rsdp);
 
         build_state->rsdp = g_memdup(tables.rsdp->data, rsdp_size);
+        fprintf(stderr, "No rsdp in ram\n");
         fw_cfg_add_file_callback(pcms->fw_cfg, ACPI_BUILD_RSDP_FILE,
                                  acpi_build_update, build_state,
                                  build_state->rsdp, rsdp_size, true);
