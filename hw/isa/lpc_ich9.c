@@ -33,6 +33,7 @@
 #include "hw/hw.h"
 #include "qapi/visitor.h"
 #include "qemu/range.h"
+#include "qapi/error.h"
 #include "hw/isa/isa.h"
 #include "hw/sysbus.h"
 #include "hw/i386/pc.h"
@@ -574,6 +575,15 @@ static const MemoryRegionOps rcrb_mmio_ops = {
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
+static void ich9_update_bus_hotplug(PCIBus *pci_bus, void *opaque)
+{
+    ICH9LPCState *s = opaque;
+
+    if (!pci_bus_is_express(pci_bus)) {
+        qbus_set_hotplug_handler(BUS(pci_bus), DEVICE(s), &error_abort);
+    }
+}
+
 static void ich9_lpc_machine_ready(Notifier *n, void *opaque)
 {
     ICH9LPCState *s = container_of(n, ICH9LPCState, machine_ready);
@@ -597,6 +607,8 @@ static void ich9_lpc_machine_ready(Notifier *n, void *opaque)
         /* floppy */
         pci_conf[0x82] |= 0x08;
     }
+
+    pci_for_each_bus(s->d.bus, ich9_update_bus_hotplug, s);
 }
 
 /* reset control */

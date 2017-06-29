@@ -258,6 +258,7 @@ static void pm_reset(void *opaque)
     }
     pm->smi_en_wmask = ~0;
 
+    acpi_pcihp_reset(&pm->acpi_pci_hotplug);
     acpi_update_sci(&pm->acpi_regs, pm->irq);
 }
 
@@ -301,6 +302,10 @@ void ich9_pm_init(PCIDevice *lpc_pci, ICH9LPCPMRegs *pm,
     pm->powerdown_notifier.notify = pm_powerdown_req;
     qemu_register_powerdown_notifier(&pm->powerdown_notifier);
 
+    acpi_pcihp_init(OBJECT(lpc_pci), &pm->acpi_pci_hotplug, lpc_pci->bus,
+                    pci_address_space_io(lpc_pci),
+                    pm->use_acpi_pci_hotplug);
+
     legacy_acpi_cpu_hotplug_init(pci_address_space_io(lpc_pci),
         OBJECT(lpc_pci), &pm->gpe_cpu, ICH9_CPU_HOTPLUG_IO_BASE);
 
@@ -333,6 +338,21 @@ static void ich9_pm_set_memory_hotplug_support(Object *obj, bool value,
     ICH9LPCState *s = ICH9_LPC_DEVICE(obj);
 
     s->pm.acpi_memory_hotplug.is_enabled = value;
+}
+
+static bool ich9_pm_get_acpi_pci_hotplug_support(Object *obj, Error **errp)
+{
+    ICH9LPCState *s = ICH9_LPC_DEVICE(obj);
+
+    return s->pm.use_acpi_pci_hotplug;
+}
+
+static void ich9_pm_set_acpi_pci_hotplug_support(Object *obj, bool value,
+                                                 Error **errp)
+{
+    ICH9LPCState *s = ICH9_LPC_DEVICE(obj);
+
+    s->pm.use_acpi_pci_hotplug = value;
 }
 
 static bool ich9_pm_get_cpu_hotplug_legacy(Object *obj, Error **errp)
@@ -446,6 +466,7 @@ void ich9_pm_add_properties(Object *obj, ICH9LPCPMRegs *pm, Error **errp)
 {
     static const uint32_t gpe0_len = ICH9_PMIO_GPE0_LEN;
     pm->acpi_memory_hotplug.is_enabled = true;
+    pm->use_acpi_pci_hotplug = true;
     pm->cpu_hotplug_legacy = true;
     pm->disable_s3 = 0;
     pm->disable_s4 = 0;
@@ -461,6 +482,10 @@ void ich9_pm_add_properties(Object *obj, ICH9LPCPMRegs *pm, Error **errp)
     object_property_add_bool(obj, "memory-hotplug-support",
                              ich9_pm_get_memory_hotplug_support,
                              ich9_pm_set_memory_hotplug_support,
+                             NULL);
+    object_property_add_bool(obj, "acpi-pci-hotplug-with-bridge-support",
+                             ich9_pm_get_acpi_pci_hotplug_support,
+                             ich9_pm_set_acpi_pci_hotplug_support,
                              NULL);
     object_property_add_bool(obj, "cpu-hotplug-legacy",
                              ich9_pm_get_cpu_hotplug_legacy,
@@ -497,6 +522,9 @@ void ich9_pm_device_plug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
             acpi_memory_plug_cb(hotplug_dev, &lpc->pm.acpi_memory_hotplug,
                                 dev, errp);
         }
+    } else if (object_dynamic_cast(OBJECT(dev), TYPE_PCI_DEVICE)) {
+        acpi_pcihp_device_plug_cb(hotplug_dev, &lpc->pm.acpi_pci_hotplug,
+                                  dev, errp);
     } else if (object_dynamic_cast(OBJECT(dev), TYPE_CPU)) {
         if (lpc->pm.cpu_hotplug_legacy) {
             legacy_acpi_cpu_plug_cb(hotplug_dev, &lpc->pm.gpe_cpu, dev, errp);
@@ -519,6 +547,9 @@ void ich9_pm_device_unplug_request_cb(HotplugHandler *hotplug_dev,
         acpi_memory_unplug_request_cb(hotplug_dev,
                                       &lpc->pm.acpi_memory_hotplug, dev,
                                       errp);
+    } else if (object_dynamic_cast(OBJECT(dev), TYPE_PCI_DEVICE)) {
+        acpi_pcihp_device_unplug_cb(hotplug_dev, &lpc->pm.acpi_pci_hotplug,
+                                    dev, errp);
     } else if (object_dynamic_cast(OBJECT(dev), TYPE_CPU) &&
                !lpc->pm.cpu_hotplug_legacy) {
         acpi_cpu_unplug_request_cb(hotplug_dev, &lpc->pm.cpuhp_state,

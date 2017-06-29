@@ -464,7 +464,12 @@ bool e820_get_entry(int, uint32_t, uint64_t *, uint64_t *);
     },
 
 #define PC_COMPAT_2_5 \
-    HW_COMPAT_2_5
+    HW_COMPAT_2_5 \
+    {\
+        .driver   = "ICH9-LPC",\
+        .property = "acpi-pci-hotplug-with-bridge-support",\
+        .value    = "off",\
+    },
 
 /* Helper for setting model-id for CPU models that changed model-id
  * depending on QEMU versions up to QEMU 2.4.

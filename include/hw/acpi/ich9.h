@@ -22,6 +22,7 @@
 #define HW_ACPI_ICH9_H
 
 #include "hw/acpi/acpi.h"
+#include "hw/acpi/pcihp.h"
 #include "hw/acpi/cpu_hotplug.h"
 #include "hw/acpi/cpu.h"
 #include "hw/acpi/memory_hotplug.h"
@@ -54,6 +55,9 @@ typedef struct ICH9LPCPMRegs {
     CPUHotplugState cpuhp_state;
 
     MemHotplugState acpi_memory_hotplug;
+
+    AcpiPciHpState acpi_pci_hotplug;
+    bool use_acpi_pci_hotplug;
 
     uint8_t disable_s3;
     uint8_t disable_s4;
