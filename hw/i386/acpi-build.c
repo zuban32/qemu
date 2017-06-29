@@ -135,18 +135,19 @@ static void acpi_get_pm_info(AcpiPmInfo *pm)
     if (piix) {
         obj = piix;
         pm->cpu_hp_io_base = PIIX4_CPU_HOTPLUG_IO_BASE;
-        pcihp_io_base =
-            object_property_get_int(obj, ACPI_PCIHP_IO_BASE_PROP, NULL);
-        pcihp_io_len =
-            object_property_get_int(obj, ACPI_PCIHP_IO_LEN_PROP, NULL);
-        pm->pcihp_io_base = (pcihp_io_base == -1) ? 0 : pcihp_io_base;
-        pm->pcihp_io_len = (pcihp_io_len == -1) ? 0 : pcihp_io_len;
     }
     if (lpc) {
         obj = lpc;
         pm->cpu_hp_io_base = ICH9_CPU_HOTPLUG_IO_BASE;
     }
     assert(obj);
+
+    pcihp_io_base =
+        object_property_get_int(obj, ACPI_PCIHP_IO_BASE_PROP, NULL);
+    pcihp_io_len =
+        object_property_get_int(obj, ACPI_PCIHP_IO_LEN_PROP, NULL);
+    pm->pcihp_io_base = (pcihp_io_base == -1) ? 0 : pcihp_io_base;
+    pm->pcihp_io_len = (pcihp_io_len == -1) ? 0 : pcihp_io_len;
 
     /* Fill in optional s3/s4 related properties */
     o = object_property_get_qobject(obj, ACPI_PM_PROP_S3_DISABLED, NULL);
