@@ -129,17 +129,18 @@ static void acpi_get_pm_info(AcpiPmInfo *pm)
     Object *lpc = ich9_lpc_find();
     Object *obj = NULL;
     QObject *o;
+    int pcihp_io_len, pcihp_io_base;
 
     pm->cpu_hp_io_base = 0;
-    pm->pcihp_io_base = 0;
-    pm->pcihp_io_len = 0;
     if (piix) {
         obj = piix;
         pm->cpu_hp_io_base = PIIX4_CPU_HOTPLUG_IO_BASE;
-        pm->pcihp_io_base =
+        pcihp_io_base =
             object_property_get_int(obj, ACPI_PCIHP_IO_BASE_PROP, NULL);
-        pm->pcihp_io_len =
+        pcihp_io_len =
             object_property_get_int(obj, ACPI_PCIHP_IO_LEN_PROP, NULL);
+        pm->pcihp_io_base = (pcihp_io_base == -1) ? 0 : pcihp_io_base;
+        pm->pcihp_io_len = (pcihp_io_len == -1) ? 0 : pcihp_io_len;
     }
     if (lpc) {
         obj = lpc;
