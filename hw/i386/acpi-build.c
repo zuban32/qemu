@@ -1936,9 +1936,9 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
     assert(root_bus);
 
     pci_for_each_bus(root_bus, acpi_test_pci_bus, &has_pci_bus);
-    if (pm->pcihp_bridge_en && has_pci_bus) {
-        build_acpi_pci_hotplug(dsdt);
-    }
+//    if (pm->pcihp_bridge_en && has_pci_bus) {
+//        build_acpi_pci_hotplug(dsdt);
+//    }
 
     if (pcmc->legacy_cpu_hotplug) {
         build_legacy_cpu_hotplug_aml(dsdt, machine, pm->cpu_hp_io_base);
@@ -1955,19 +1955,75 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
     {
         aml_append(scope, aml_name_decl("_HID", aml_string("ACPI0006")));
 
+        // append aml_load here
         if (pm->pcihp_bridge_en && has_pci_bus) {
+
+            fprintf(stderr, "Creating GPE_E01\n");
             method = aml_method("_E01", 0, AML_NOTSERIALIZED);
+
+#define ACPI_CHKSUM_OFFSET 9
+#define ACPI_DYN_REG_SIZE 0x3C
+            Aml *while_ctx;
+            Aml *idx = aml_local(0);
+            Aml *sum = aml_local(1);
+            Aml *ssdt_buf = aml_local(2);
+            Aml *chr = aml_local(4);
+            Aml *dbhandle = aml_local(5);
+            Aml *opbase = aml_local(6);
+            Aml *chksum = aml_index(ssdt_buf, aml_int(ACPI_CHKSUM_OFFSET));
+
+            aml_append(method, aml_add(aml_name("MHOR"), aml_int(1), opbase));
+            aml_append(method, aml_operation_region("DNOP", AML_SYSTEM_MEMORY, opbase, ACPI_DYN_REG_SIZE));
+            field = aml_field("DNOP", AML_BYTE_ACC, AML_NOLOCK, AML_WRITE_AS_ZEROS);
+            aml_append(field, aml_named_field("MMMM", ACPI_DYN_REG_SIZE * 8));
+            aml_append(method, field);
+
+            /*
+                Windows can't use Index on BufferField
+                so it has to be copied into a local buffer
+             */
+            aml_append(method, aml_store(aml_name("MMMM"), ssdt_buf));
+
+            /* set  */
+            aml_append(method, aml_add(
+                    aml_int(0x30) /* '0' */,
+                    aml_and(aml_int(0xf), aml_shiftright(aml_arg(0), aml_int(4), NULL), NULL),
+                    chr
+            ));
+            aml_append(method, aml_store(chr, aml_index(ssdt_buf, aml_int(ACPI_DYN_REG_SIZE - 3))));
+            aml_append(method, aml_add(
+                    aml_int(0x30) /* '0' */,
+                    aml_and(aml_int(0xf), aml_arg(0), NULL),
+                    chr
+            ));
+            aml_append(method, aml_store(chr, aml_index(ssdt_buf, aml_int(ACPI_DYN_REG_SIZE - 2))));
+
+            /* update SSDT checksum */
+            aml_append(method, aml_store(aml_int(0), sum));
+            aml_append(method, aml_store(aml_int(0), idx));
+            aml_append(method, aml_store(aml_int(0), chksum));
+            while_ctx = aml_while(aml_lless(idx, aml_int(ACPI_DYN_REG_SIZE - 1)));
+            aml_append(while_ctx, aml_add(aml_derefof(aml_index(ssdt_buf, idx)), sum, sum));
+            aml_append(while_ctx, aml_increment(idx));
+            aml_append(method, while_ctx);
+            aml_append(method, aml_subtract(aml_int(0), sum, chksum));
+            // aml_append(method, aml_store(ssdt_buf, aml_name("MMMM")));
+
+            aml_append(method, aml_load(aml_name("DNOP"), dbhandle));
+            //             aml_append(method, aml_call1("DYNF", aml_arg(1)));
+
             aml_append(method,
-                aml_acquire(aml_name("\\_SB.PCI0.BLCK"), 0xFFFF));
+                    aml_acquire(aml_name("\\_SB.PCI0.BLCK"), 0xFFFF));
             aml_append(method, aml_call0("\\_SB.PCI0.PCNT"));
             aml_append(method, aml_release(aml_name("\\_SB.PCI0.BLCK")));
+//            aml_append(method, aml_unload(dbhandle));
             aml_append(scope, method);
         }
 
         if (pcms->acpi_nvdimm_state.is_enabled) {
             method = aml_method("_E04", 0, AML_NOTSERIALIZED);
             aml_append(method, aml_notify(aml_name("\\_SB.NVDR"),
-                                          aml_int(0x80)));
+                    aml_int(0x80)));
             aml_append(scope, method);
         }
     }
@@ -2086,23 +2142,6 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
     aml_append(scope, dev);
 
     crs_range_set_free(&crs_range_set);
-
-    /* reserve PCIHP resources */
-    if (pm->pcihp_bridge_en && has_pci_bus && pm->pcihp_io_len) {
-        dev = aml_device("PHPR");
-        aml_append(dev, aml_name_decl("_HID", aml_string("PNP0A06")));
-        aml_append(dev,
-            aml_name_decl("_UID", aml_string("PCI Hotplug resources")));
-        /* device present, functioning, decoding, not shown in UI */
-        aml_append(dev, aml_name_decl("_STA", aml_int(0xB)));
-        crs = aml_resource_template();
-        aml_append(crs,
-            aml_io(AML_DECODE16, pm->pcihp_io_base, pm->pcihp_io_base, 1,
-                   pm->pcihp_io_len)
-        );
-        aml_append(dev, aml_name_decl("_CRS", crs));
-        aml_append(scope, dev);
-    }
     aml_append(dsdt, scope);
 
     /*  create S3_ / S4_ / S5_ packages if necessary */
@@ -2222,12 +2261,6 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
         Aml *scope = aml_scope("PCI0");
         bool scope_used = false;
 
-        if (pm->pcihp_bridge_en && has_pci_bus) {
-            /* Scan all PCI buses. Generate tables to support hotplug. */
-            build_append_pci_bus_devices(scope, root_bus, pm->pcihp_bridge_en);
-            scope_used = true;
-        }
-
         if (misc->tpm_version != TPM_VERSION_UNSPEC) {
             dev = aml_device("ISA.TPM");
             aml_append(dev, aml_name_decl("_HID", aml_eisaid("PNP0C31")));
@@ -2272,9 +2305,39 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
 
         Aml *ssdt = init_aml_allocator();
         acpi_data_push(ssdt->buf, sizeof(AcpiTableHeader));
-        method = aml_method("DYNF", 1, AML_NOTSERIALIZED);
-        aml_append(method, aml_notify(aml_name("\\_SB.MHPC.MP00"), aml_arg(0)));
-        aml_append(ssdt, method);
+
+        build_acpi_pci_hotplug(ssdt);
+
+        scope = aml_scope("\\_SB.PCI0");
+        /* reserve PCIHP resources */
+        if (pm->pcihp_io_len) {
+            dev = aml_device("PHPR");
+            aml_append(dev, aml_name_decl("_HID", aml_string("PNP0A06")));
+            aml_append(dev,
+                aml_name_decl("_UID", aml_string("PCI Hotplug resources")));
+            /* device present, functioning, decoding, not shown in UI */
+            aml_append(dev, aml_name_decl("_STA", aml_int(0xB)));
+            crs = aml_resource_template();
+            aml_append(crs,
+                aml_io(AML_DECODE16, pm->pcihp_io_base, pm->pcihp_io_base, 1,
+                       pm->pcihp_io_len)
+            );
+            aml_append(dev, aml_name_decl("_CRS", crs));
+            aml_append(scope, dev);
+        }
+        aml_append(ssdt, scope);
+
+        sb_scope = aml_scope("\\_SB");
+        {
+            Aml *scope = aml_scope("PCI0");
+
+            /* Scan all PCI buses. Generate tables to support hotplug. */
+            build_append_pci_bus_devices(scope, root_bus, pm->pcihp_bridge_en);
+
+            aml_append(sb_scope, scope);
+            aml_append(ssdt, sb_scope);
+        }
+
         g_array_append_vals(table_data, ssdt->buf->data, ssdt->buf->len);
 
         build_header(linker, table_data,
@@ -2284,7 +2347,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
         for (i =0; i < table_data->len - dyn_load_off; i++) {
             sum += *(table_data->data + dyn_load_off + i);
         }
-        fprintf(stderr, "SUM: 0x%x\n", sum);
+        fprintf(stderr, "PCI SUM: 0x%x\n", sum);
         //write(2, table_data->data + dyn_load_off, table_data->len - dyn_load_off);
 
         free_aml_allocator();
