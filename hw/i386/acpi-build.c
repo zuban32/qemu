@@ -518,8 +518,16 @@ static void build_append_pcihp_notify_entry(Aml *method, int slot)
     Aml *if_ctx;
     int32_t devfn = PCI_DEVFN(slot, 0);
 
+
     if_ctx = aml_if(aml_and(aml_arg(0), aml_int(0x1U << slot), NULL));
+//    Aml *if_ctx2 = aml_if(aml_equal(aml_arg(1), aml_int(1)));
+
+//    Aml *tmp = aml_local(0);
+//    aml_append(if_ctx2, aml_load(aml_name("T%d", slot), tmp));
     aml_append(if_ctx, aml_notify(aml_name("S%.02X", devfn), aml_arg(1)));
+//    aml_append(if_ctx, if_ctx2);
+//    Aml *else_ctx2 = aml_else();
+//    aml_append(else_ctx2, aml_load(aml_name("F%d", slot), tmp));
     aml_append(method, if_ctx);
 }
 
@@ -553,6 +561,8 @@ static void build_append_pci_bus_devices(Aml *parent_scope, PCIBus *bus,
                 aml_append(dev, aml_name_decl("_SUN", aml_int(slot)));
                 aml_append(dev, aml_name_decl("_ADR", aml_int(slot << 16)));
                 method = aml_method("_EJ0", 1, AML_NOTSERIALIZED);
+//                Aml *tmp = aml_local(0);
+//                aml_append(method, aml_load(aml_name("J%d", slot), tmp));
                 aml_append(method,
                     aml_call2("PCEJ", aml_name("BSEL"), aml_name("_SUN"))
                 );
@@ -1956,18 +1966,18 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
         aml_append(scope, aml_name_decl("_HID", aml_string("ACPI0006")));
 
         // append aml_load here
-        if (pm->pcihp_bridge_en && has_pci_bus) {
+        {
 
             fprintf(stderr, "Creating GPE_E01\n");
             method = aml_method("_E01", 0, AML_NOTSERIALIZED);
 
 #define ACPI_CHKSUM_OFFSET 9
-#define ACPI_DYN_REG_SIZE 0x3C
+#define ACPI_DYN_REG_SIZE 0x8E1
             Aml *while_ctx;
             Aml *idx = aml_local(0);
             Aml *sum = aml_local(1);
             Aml *ssdt_buf = aml_local(2);
-            Aml *chr = aml_local(4);
+//            Aml *chr = aml_local(4);
             Aml *dbhandle = aml_local(5);
             Aml *opbase = aml_local(6);
             Aml *chksum = aml_index(ssdt_buf, aml_int(ACPI_CHKSUM_OFFSET));
@@ -1985,24 +1995,24 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
             aml_append(method, aml_store(aml_name("MMMM"), ssdt_buf));
 
             /* set  */
-            aml_append(method, aml_add(
-                    aml_int(0x30) /* '0' */,
-                    aml_and(aml_int(0xf), aml_shiftright(aml_arg(0), aml_int(4), NULL), NULL),
-                    chr
-            ));
-            aml_append(method, aml_store(chr, aml_index(ssdt_buf, aml_int(ACPI_DYN_REG_SIZE - 3))));
-            aml_append(method, aml_add(
-                    aml_int(0x30) /* '0' */,
-                    aml_and(aml_int(0xf), aml_arg(0), NULL),
-                    chr
-            ));
-            aml_append(method, aml_store(chr, aml_index(ssdt_buf, aml_int(ACPI_DYN_REG_SIZE - 2))));
+//            aml_append(method, aml_add(
+//                    aml_int(0x30) /* '0' */,
+//                    aml_and(aml_int(0xf), aml_shiftright(aml_arg(0), aml_int(4), NULL), NULL),
+//                    chr
+//            ));
+//            aml_append(method, aml_store(chr, aml_index(ssdt_buf, aml_int(ACPI_DYN_REG_SIZE - 3))));
+//            aml_append(method, aml_add(
+//                    aml_int(0x30) /* '0' */,
+//                    aml_and(aml_int(0xf), aml_arg(0), NULL),
+//                    chr
+//            ));
+//            aml_append(method, aml_store(chr, aml_index(ssdt_buf, aml_int(ACPI_DYN_REG_SIZE - 2))));
 
             /* update SSDT checksum */
             aml_append(method, aml_store(aml_int(0), sum));
             aml_append(method, aml_store(aml_int(0), idx));
             aml_append(method, aml_store(aml_int(0), chksum));
-            while_ctx = aml_while(aml_lless(idx, aml_int(ACPI_DYN_REG_SIZE - 1)));
+            while_ctx = aml_while(aml_lless(idx, aml_int(0x3C - 1)));
             aml_append(while_ctx, aml_add(aml_derefof(aml_index(ssdt_buf, idx)), sum, sum));
             aml_append(while_ctx, aml_increment(idx));
             aml_append(method, while_ctx);
@@ -2016,7 +2026,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
                     aml_acquire(aml_name("\\_SB.PCI0.BLCK"), 0xFFFF));
             aml_append(method, aml_call0("\\_SB.PCI0.PCNT"));
             aml_append(method, aml_release(aml_name("\\_SB.PCI0.BLCK")));
-//            aml_append(method, aml_unload(dbhandle));
+            aml_append(method, aml_unload(dbhandle));
             aml_append(scope, method);
         }
 
@@ -2310,7 +2320,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
 
         scope = aml_scope("\\_SB.PCI0");
         /* reserve PCIHP resources */
-        if (pm->pcihp_io_len) {
+         {
             dev = aml_device("PHPR");
             aml_append(dev, aml_name_decl("_HID", aml_string("PNP0A06")));
             aml_append(dev,
@@ -2342,7 +2352,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
 
         build_header(linker, table_data,
              (void *)(table_data->data + dyn_load_off),
-             "SSDT", table_data->len - dyn_load_off, 1, NULL, "MTFYNM");
+             "SSDT", table_data->len - dyn_load_off, 1, NULL, NULL);
 
         for (i =0; i < table_data->len - dyn_load_off; i++) {
             sum += *(table_data->data + dyn_load_off + i);
