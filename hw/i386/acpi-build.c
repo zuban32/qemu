@@ -1849,7 +1849,9 @@ static Aml *build_q35_osc_method(void)
      * Always allow native PME, AER (no dependencies)
      * Never allow SHPC (no SHPC controller in this system)
      */
-    aml_append(if_ctx, aml_and(a_ctrl, aml_int(0x1D), a_ctrl));
+    aml_append(if_ctx, aml_or(a_ctrl, aml_int(0x2), a_ctrl));
+    aml_append(if_ctx, aml_and(a_ctrl, aml_int(0x1E), a_ctrl));
+//    aml_append(if_ctx, aml_or(a_ctrl, aml_int(0x2), a_ctrl));
 
     if_ctx2 = aml_if(aml_lnot(aml_equal(aml_arg(1), aml_int(1))));
     /* Unknown revision */
@@ -1863,6 +1865,7 @@ static Aml *build_q35_osc_method(void)
 
     /* Update DWORD3 in the buffer */
     aml_append(if_ctx, aml_store(a_ctrl, aml_name("CDW3")));
+    aml_append(if_ctx, aml_or(aml_name("CDW3"), aml_int(0x2), aml_name("CDW3")));
     aml_append(method, if_ctx);
 
     else_ctx = aml_else();
