@@ -1850,7 +1850,7 @@ static Aml *build_q35_osc_method(void)
      * Never allow SHPC (no SHPC controller in this system)
      */
     aml_append(if_ctx, aml_or(a_ctrl, aml_int(0x2), a_ctrl));
-    aml_append(if_ctx, aml_and(a_ctrl, aml_int(0x1E), a_ctrl));
+    aml_append(if_ctx, aml_and(a_ctrl, aml_int(0x1F), a_ctrl));
 //    aml_append(if_ctx, aml_or(a_ctrl, aml_int(0x2), a_ctrl));
 
     if_ctx2 = aml_if(aml_lnot(aml_equal(aml_arg(1), aml_int(1))));
