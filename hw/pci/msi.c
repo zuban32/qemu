@@ -241,6 +241,9 @@ int msi_init(struct PCIDevice *dev, uint8_t offset,
                      0xffffffff >> (PCI_MSI_VECTORS_MAX - nr_vectors));
     }
 
+    int v = pci_get_word(dev->config + dev->msi_cap + 2);
+    fprintf(stderr, "vec_num = %x\n", 1 << ((v & PCI_MSI_FLAGS_QMASK) >> 1));
+
     return 0;
 }
 
@@ -316,6 +319,7 @@ void msi_notify(PCIDevice *dev, unsigned int vector)
 
     assert(vector < nr_vectors);
     if (msi_is_masked(dev, vector)) {
+        fprintf(stderr, "MSI is masked\n");
         assert(flags & PCI_MSI_FLAGS_MASKBIT);
         pci_long_test_and_set_mask(
             dev->config + msi_pending_off(dev, msi64bit), 1U << vector);

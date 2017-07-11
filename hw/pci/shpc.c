@@ -148,6 +148,7 @@ static void shpc_set_status(SHPCDevice *shpc,
 
 static void shpc_interrupt_update(PCIDevice *d)
 {
+    fprintf(stderr, "SHPC int update\n");
     SHPCDevice *shpc = d->shpc;
     int slot;
     int level = 0;
@@ -169,10 +170,13 @@ static void shpc_interrupt_update(PCIDevice *d)
     }
     pci_set_long(shpc->config + SHPC_INT_LOCATOR, int_locator);
     level = (!(serr_int & SHPC_INT_DIS) && int_locator) ? 1 : 0;
-    if (msi_enabled(d) && shpc->msi_requested != level)
+    if (msi_enabled(d) && shpc->msi_requested != level) {
+        fprintf(stderr, "SHPC MSI\n");
         msi_notify(d, 0);
-    else
+    } else {
+        fprintf(stderr, "SHPC IRQ\n");
         pci_set_irq(d, level);
+    }
     shpc->msi_requested = level;
 }
 
@@ -391,6 +395,7 @@ done:
 
 static void shpc_write(PCIDevice *d, unsigned addr, uint64_t val, int l)
 {
+    fprintf(stderr, "SHPC write: %lx(%d) to %x\n", val, l, addr);
     SHPCDevice *shpc = d->shpc;
     int i;
     if (addr >= SHPC_SIZEOF(d)) {
@@ -421,6 +426,7 @@ static uint64_t shpc_read(PCIDevice *d, unsigned addr, int l)
     }
     l = MIN(l, SHPC_SIZEOF(d) - addr);
     memcpy(&val, d->shpc->config + addr, l);
+    fprintf(stderr, "SHPC read: %lx(%d) at %x\n", val, l, addr);
     return val;
 }
 
@@ -508,6 +514,7 @@ static void shpc_device_hotplug_common(PCIDevice *affected_dev, int *slot,
 void shpc_device_hotplug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
                             Error **errp)
 {
+    fprintf(stderr, "SHPC hp cb\n");
     Error *local_err = NULL;
     PCIDevice *pci_hotplug_dev = PCI_DEVICE(hotplug_dev);
     SHPCDevice *shpc = pci_hotplug_dev->shpc;

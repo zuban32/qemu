@@ -95,6 +95,10 @@ static int pci_bridge_dev_initfn(PCIDevice *dev)
         error_free(local_err);
     }
 
+    int pos = pci_add_capability(dev, PCI_CAP_ID_PM, 0, PCI_PM_SIZEOF);
+    assert(pos > 0);
+    pci_set_word(dev->config + pos + PCI_PM_PMC, 0x3);
+
     if (shpc_present(dev)) {
         /* TODO: spec recommends using 64 bit prefetcheable BAR.
          * Check whether that works well. */
@@ -151,9 +155,11 @@ static void qdev_pci_bridge_dev_reset(DeviceState *qdev)
     PCIDevice *dev = PCI_DEVICE(qdev);
 
     pci_bridge_reset(qdev);
+
     if (shpc_present(dev)) {
         shpc_reset(dev);
     }
+    msi_reset(dev);
 }
 
 static Property pci_bridge_dev_properties[] = {
