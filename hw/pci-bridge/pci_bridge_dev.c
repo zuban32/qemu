@@ -76,6 +76,10 @@ static int pci_bridge_dev_initfn(PCIDevice *dev)
         goto slotid_error;
     }
 
+    int pos = pci_add_capability(dev, PCI_CAP_ID_PM, 0, PCI_PM_SIZEOF);
+    assert(pos > 0);
+    pci_set_word(dev->config + pos + PCI_PM_PMC, 0x3);
+
     if (bridge_dev->msi != ON_OFF_AUTO_OFF) {
         /* it means SHPC exists, because MSI is needed by SHPC */
 
