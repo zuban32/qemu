@@ -404,6 +404,29 @@ void pci_bridge_map_irq(PCIBridge *br, const char* bus_name,
     br->bus_name = bus_name;
 }
 
+
+void pci_bridge_help_cap_init(PCIDevice *dev, int cap_offset,
+                              uint8_t bus_reserve, uint32_t io_limit,
+                              uint16_t mem_limit, uint64_t pref_limit)
+{
+    size_t cap_len = sizeof(PCIBridgeQemuCap);
+    fprintf(stderr, "cap_len = %lu\n", cap_len);
+    PCIBridgeQemuCap cap;
+
+    cap.len = cap_len;
+    cap.bus_res = bus_reserve;
+    cap.io_lim = io_limit & 0xFF;
+    cap.io_lim_upper = io_limit >> 8 & 0xFFFF;
+    cap.mem_lim = mem_limit;
+    cap.pref_lim = pref_limit & 0xFFFF;
+    cap.pref_lim_upper = pref_limit >> 16 & 0xFFFFFFFF;
+
+    int offset = pci_add_capability(dev, PCI_CAP_ID_VNDR, cap_offset, cap_len);
+    assert(offset > 0);
+
+    memcpy(dev->config + offset + 2, (char *)&cap + 2, cap_len - 2);
+}
+
 static const TypeInfo pci_bridge_type_info = {
     .name = TYPE_PCI_BRIDGE,
     .parent = TYPE_PCI_DEVICE,
