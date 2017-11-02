@@ -137,13 +137,14 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
 #endif /* CONFIG USER ONLY */
 
 /* Execute a TB, and fix up the CPU state afterwards if necessary */
-static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
+static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb,
+        target_ulong pc_start)
 {
     CPUArchState *env = cpu->env_ptr;
     uintptr_t ret;
     TranslationBlock *last_tb;
     int tb_exit;
-    uint8_t *tb_ptr = itb->tc.ptr;
+    uint8_t *tb_ptr = itb->tc.ptr + pc_start - itb.pc;
 
     qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
                            "Trace %p [%d: " TARGET_FMT_lx "] %s\n",
@@ -375,6 +376,7 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
     bool acquired_tb_lock = false;
 
     tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &flags, cf_mask);
+    fprintf(stderr, "Looking for the TB at %lx...\n", pc);
     if (tb == NULL) {
         /* mmap_lock is needed by tb_gen_code, and mmap_lock must be
          * taken outside tb_lock. As system emulation is currently
@@ -389,14 +391,23 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
          */
         tb = tb_htable_lookup(cpu, pc, cs_base, flags, cf_mask);
         if (likely(tb == NULL)) {
+            fprintf(stderr, "Not found\n");
             /* if no translated code available, then translate it now */
             tb = tb_gen_code(cpu, pc, cs_base, flags, cf_mask);
+        } else {
+            fprintf(stderr, "Found\n");
         }
 
         mmap_unlock();
         /* We add the TB in the virtual pc hash table for the fast lookup */
+        fprintf(stderr, "Adding tb [%lx] to the cache\n", pc);
         atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(pc)], tb);
+        for(int i = 0; i < tb->cur_free_entry; i++) {
+            fprintf(stderr, "Adding tb [%lx] to the cache\n", tb->mid_entries[i]);
+            atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(tb->mid_entries[i])], tb);
+        }
     }
+    fprintf(stderr, "Found\n");
 #ifndef CONFIG_USER_ONLY
     /* We don't take care of direct jumps when address mapping changes in
      * system emulation. So it's not safe to make a direct jump to a TB

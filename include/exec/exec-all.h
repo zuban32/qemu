@@ -318,6 +318,10 @@ struct tb_tc {
 
 struct TranslationBlock {
     target_ulong pc;   /* simulated PC corresponding to this block (EIP + CS base) */
+#define MAX_INNER_JUMPS 2
+    target_ulong mid_entries[MAX_INNER_JUMPS];
+    int cur_free_entry;
+
     target_ulong cs_base; /* CS base for this block */
     uint32_t flags; /* flags defining in which context the code was generated */
     uint16_t size;      /* size of target code for this block (1 <=

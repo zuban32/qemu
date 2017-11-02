@@ -1272,6 +1272,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tb->flags = flags;
     tb->cflags = cflags;
     tb->trace_vcpu_dstate = *cpu->trace_dstate;
+    tb->cur_free_entry = 0;
     tcg_ctx->tb_cflags = cflags;
 
 #ifdef CONFIG_PROFILER

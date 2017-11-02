@@ -136,9 +136,12 @@ typedef struct DisasContext {
     int cpuid_7_0_ebx_features;
     int cpuid_xsave_features;
     sigjmp_buf jmpbuf;
+
+    int cur_jumps;
 } DisasContext;
 
 static void gen_eob(DisasContext *s);
+static void gen_eob1(DisasContext *s, target_ulong next_eip);
 static void gen_jr(DisasContext *s, TCGv dest);
 static void gen_jmp(DisasContext *s, target_ulong eip);
 static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num);
@@ -2191,11 +2194,17 @@ static inline void gen_goto_tb(DisasContext *s, int tb_num, target_ulong eip)
     target_ulong pc = s->cs_base + eip;
 
     if (use_goto_tb(s, pc))  {
+        fprintf(stderr, "use got_tb: to %lx\n", eip);
         /* jump to same page: we can use a direct jump */
         tcg_gen_goto_tb(tb_num);
         gen_jmp_im(eip);
-        tcg_gen_exit_tb((uintptr_t)s->base.tb + tb_num);
-        s->base.is_jmp = DISAS_NORETURN;
+        if (s->cur_jumps <= 0) {
+            tcg_gen_exit_tb((uintptr_t)s->base.tb + tb_num);
+            s->base.is_jmp = DISAS_NORETURN;
+            s->pc = eip;
+        } else {
+            s->cur_jumps--;
+        }
     } else {
         /* jump to another page */
         gen_jmp_im(eip);
@@ -2227,7 +2236,7 @@ static inline void gen_jcc(DisasContext *s, int b,
         gen_set_label(l1);
         gen_jmp_im(val);
         gen_set_label(l2);
-        gen_eob(s);
+        gen_eob1(s, next_eip);
     }
 }
 
@@ -2555,7 +2564,8 @@ static void gen_bnd_jmp(DisasContext *s)
    If RECHECK_TF, emit a rechecking helper for #DB, ignoring the state of
    S->TF.  This is used by the syscall/sysret insns.  */
 static void
-do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
+do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr,
+                  target_ulong next_eip)
 {
     gen_update_cc_op(s);
 
@@ -2579,34 +2589,55 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
     } else if (jr) {
         tcg_gen_lookup_and_goto_ptr();
     } else {
-        tcg_gen_exit_tb(0);
+        bool back_arc = (s->base.pc_first <= next_eip && next_eip <= s->pc_start);
+        if(back_arc) {
+            fprintf(stderr, "Back arc found at %lx to %lx\n", s->pc_start,
+                    next_eip);
+            s->base.tb->mid_entries[s->base.tb->cur_free_entry++] = next_eip;
+        }
+        if (s->cur_jumps > 0 && next_eip != -1 && !back_arc) {
+            fprintf(stderr, "eob at %lx: cur_jumps[%d->%d], next_eip = %lx\n",
+                    s->pc_start, s->cur_jumps, s->cur_jumps - 1, next_eip);
+            s->cur_jumps--;
+            s->pc = next_eip;
+            s->base.is_jmp = DISAS_NEXT;
+            return;
+        } else {
+            tcg_gen_exit_tb(0);
+        }
     }
     s->base.is_jmp = DISAS_NORETURN;
 }
 
 static inline void
-gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf)
+gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf,
+               target_ulong next_eip)
 {
-    do_gen_eob_worker(s, inhibit, recheck_tf, false);
+    do_gen_eob_worker(s, inhibit, recheck_tf, false, next_eip);
 }
 
 /* End of block.
    If INHIBIT, set HF_INHIBIT_IRQ_MASK if it isn't already set.  */
 static void gen_eob_inhibit_irq(DisasContext *s, bool inhibit)
 {
-    gen_eob_worker(s, inhibit, false);
+    gen_eob_worker(s, inhibit, false, -1);
 }
 
 /* End of block, resetting the inhibit irq flag.  */
+static void gen_eob1(DisasContext *s, target_ulong next_eip)
+{
+    gen_eob_worker(s, false, false, next_eip);
+}
+
 static void gen_eob(DisasContext *s)
 {
-    gen_eob_worker(s, false, false);
+    gen_eob_worker(s, false, false, -1);
 }
 
 /* Jump to register */
 static void gen_jr(DisasContext *s, TCGv dest)
 {
-    do_gen_eob_worker(s, false, false, true);
+    do_gen_eob_worker(s, false, false, true, -1);
 }
 
 /* generate a jump to eip. No segment change must happen before as a
@@ -2619,7 +2650,7 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
         gen_goto_tb(s, tb_num, eip);
     } else {
         gen_jmp_im(eip);
-        gen_eob(s);
+        gen_eob1(s, eip);
     }
 }
 
@@ -4467,6 +4498,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
     target_ulong pc_start = s->base.pc_next;
 
     s->pc_start = s->pc = pc_start;
+    fprintf(stderr, "Disas insn at %lx\n", s->pc);
     prefixes = 0;
     s->override = -1;
     rex_w = -1;
@@ -7187,7 +7219,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         /* TF handling for the syscall insn is different. The TF bit is  checked
            after the syscall insn completes. This allows #DB to not be
            generated after one has entered CPL0 if TF is set in FMASK.  */
-        gen_eob_worker(s, false, true);
+        gen_eob_worker(s, false, true, -1);
         break;
     case 0x107: /* sysret */
         if (!s->pe) {
@@ -7202,7 +7234,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
                checked after the sysret insn completes. This allows #DB to be
                generated "as if" the syscall insn in userspace has just
                completed.  */
-            gen_eob_worker(s, false, true);
+            gen_eob_worker(s, false, true, -1);
         }
         break;
 #endif
@@ -8437,8 +8469,8 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
     dc->code64 = (flags >> HF_CS64_SHIFT) & 1;
 #endif
     dc->flags = flags;
-    dc->jmp_opt = !(dc->tf || dc->base.singlestep_enabled ||
-                    (flags & HF_INHIBIT_IRQ_MASK));
+    dc->jmp_opt = 0;//!(dc->tf || dc->base.singlestep_enabled ||
+                    //(flags & HF_INHIBIT_IRQ_MASK));
     /* Do not optimize repz jumps at all in icount mode, because
        rep movsS instructions are execured with different paths
        in !repz_opt and repz_opt modes. The first one was used
@@ -8455,6 +8487,7 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
     if (!dc->addseg && (dc->vm86 || !dc->pe || !dc->code32))
         printf("ERROR addseg\n");
 #endif
+    dc->cur_jumps = MAX_INNER_JUMPS;
 
     cpu_T0 = tcg_temp_new();
     cpu_T1 = tcg_temp_new();
