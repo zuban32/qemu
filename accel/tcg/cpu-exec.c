@@ -144,12 +144,20 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb,
     uintptr_t ret;
     TranslationBlock *last_tb;
     int tb_exit;
-    uint8_t *tb_ptr = itb->tc.ptr + pc_start - itb.pc;
+    fprintf(stderr, "Offset = %lu\n", pc_start - itb->pc);
+    uint8_t *tb_ptr = itb->tc.ptr;
 
-    qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
+    for(int i = 0; i < itb->cur_free_entry; i++) {
+        if (pc_start == itb->mid_entries[i]) {
+            tb_ptr = itb->gen_mid_entries[i];
+            break;
+        }
+    }
+
+    qemu_log_mask_and_addr(CPU_LOG_EXEC, pc_start,
                            "Trace %p [%d: " TARGET_FMT_lx "] %s\n",
-                           itb->tc.ptr, cpu->cpu_index, itb->pc,
-                           lookup_symbol(itb->pc));
+                           tb_ptr, cpu->cpu_index, pc_start,
+                           lookup_symbol(pc_start));
 
 #if defined(DEBUG_DISAS)
     if (qemu_loglevel_mask(CPU_LOG_TB_CPU)
@@ -255,7 +263,7 @@ void cpu_exec_step_atomic(CPUState *cpu)
         cc->cpu_exec_enter(cpu);
         /* execute the generated code */
         trace_exec_tb(tb, pc);
-        cpu_tb_exec(cpu, tb);
+        cpu_tb_exec(cpu, tb, 0);
         cc->cpu_exec_exit(cpu);
         parallel_cpus = true;
 
@@ -368,7 +376,8 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
 
 static inline TranslationBlock *tb_find(CPUState *cpu,
                                         TranslationBlock *last_tb,
-                                        int tb_exit, uint32_t cf_mask)
+                                        int tb_exit, uint32_t cf_mask,
+                                        target_ulong *actual_pc)
 {
     TranslationBlock *tb;
     target_ulong cs_base, pc;
@@ -376,6 +385,7 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
     bool acquired_tb_lock = false;
 
     tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &flags, cf_mask);
+    *actual_pc = pc;
     fprintf(stderr, "Looking for the TB at %lx...\n", pc);
     if (tb == NULL) {
         /* mmap_lock is needed by tb_gen_code, and mmap_lock must be
@@ -604,13 +614,14 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
 }
 
 static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
-                                    TranslationBlock **last_tb, int *tb_exit)
+                                    TranslationBlock **last_tb, int *tb_exit,
+                                    target_ulong pc_start)
 {
     uintptr_t ret;
     int32_t insns_left;
 
     trace_exec_tb(tb, tb->pc);
-    ret = cpu_tb_exec(cpu, tb);
+    ret = cpu_tb_exec(cpu, tb, pc_start);
     tb = (TranslationBlock *)(ret & ~TB_EXIT_MASK);
     *tb_exit = ret & TB_EXIT_MASK;
     if (*tb_exit != TB_EXIT_REQUESTED) {
@@ -721,8 +732,9 @@ int cpu_exec(CPUState *cpu)
                 cpu->cflags_next_tb = -1;
             }
 
-            tb = tb_find(cpu, last_tb, tb_exit, cflags);
-            cpu_loop_exec_tb(cpu, tb, &last_tb, &tb_exit);
+            target_ulong pc_start;
+            tb = tb_find(cpu, last_tb, tb_exit, cflags, &pc_start);
+            cpu_loop_exec_tb(cpu, tb, &last_tb, &tb_exit, pc_start);
             /* Try to align the host and virtual clocks
                if the guest is in advance */
             align_clocks(&sc, cpu);

@@ -93,6 +93,11 @@ static TCGv_i64 cpu_tmp1_i64;
 static int x86_64_hregs;
 #endif
 
+typedef struct instr_gen_place {
+    target_ulong pc;
+    int op_idx;
+} instr_gen_place;
+
 typedef struct DisasContext {
     DisasContextBase base;
 
@@ -138,6 +143,9 @@ typedef struct DisasContext {
     sigjmp_buf jmpbuf;
 
     int cur_jumps;
+
+    instr_gen_place instr_gen_code[1024];
+    int cur_instr_code;
 } DisasContext;
 
 static void gen_eob(DisasContext *s);
@@ -2589,22 +2597,22 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr,
     } else if (jr) {
         tcg_gen_lookup_and_goto_ptr();
     } else {
-        bool back_arc = (s->base.pc_first <= next_eip && next_eip <= s->pc_start);
+        bool back_arc = false;//(s->base.pc_first <= next_eip && next_eip <= s->pc_start);
         if(back_arc) {
             fprintf(stderr, "Back arc found at %lx to %lx\n", s->pc_start,
                     next_eip);
-            s->base.tb->mid_entries[s->base.tb->cur_free_entry++] = next_eip;
-        }
-        if (s->cur_jumps > 0 && next_eip != -1 && !back_arc) {
+            fprintf(stderr, "Op_idx = %d\n", tcg_ctx->gen_next_op_idx-1);
+            s->base.tb->mid_entries[s->base.tb->cur_free_entry] = next_eip;
+            s->base.tb->instr_num_mid_entries[s->base.tb->cur_free_entry++] = tcg_ctx->gen_next_op_idx-1;
+        } else if (s->cur_jumps > 0 && next_eip != -1) {
             fprintf(stderr, "eob at %lx: cur_jumps[%d->%d], next_eip = %lx\n",
                     s->pc_start, s->cur_jumps, s->cur_jumps - 1, next_eip);
             s->cur_jumps--;
             s->pc = next_eip;
             s->base.is_jmp = DISAS_NEXT;
             return;
-        } else {
-            tcg_gen_exit_tb(0);
         }
+        tcg_gen_exit_tb(0);
     }
     s->base.is_jmp = DISAS_NORETURN;
 }
@@ -2649,8 +2657,47 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
     if (s->jmp_opt) {
         gen_goto_tb(s, tb_num, eip);
     } else {
-        gen_jmp_im(eip);
-        gen_eob1(s, eip);
+        bool back_arc = (s->base.pc_first <= eip && eip <= s->pc_start);
+
+        if (back_arc) {
+            TCGLabel *l = gen_new_label();
+            int label_idx = -1;
+
+            for(int i = 0; i < s->cur_instr_code; i++) {
+                if (s->instr_gen_code[i].pc == eip) {
+                    label_idx = s->instr_gen_code[i].op_idx;
+                    break;
+                }
+            }
+
+            if(label_idx == -1) {
+                fprintf(stderr, "A place for label at pc = %lx wasn't found!\n",
+                        eip);
+            } else {
+                TCGOp *label_place = tcg_ctx->gen_op_buf + label_idx;
+                gen_set_label(l);
+                tcg_gen_br(l);
+
+                unsigned lbl_ind = tcg_ctx->gen_next_op_idx - 2;
+                unsigned br_ind = tcg_ctx->gen_next_op_idx - 1;
+                TCGOp *instr_label = tcg_ctx->gen_op_buf + lbl_ind;
+                TCGOp *instr_br = tcg_ctx->gen_op_buf + br_ind;
+
+                tcg_ctx->gen_op_buf[label_place->prev].next = lbl_ind;
+                tcg_ctx->gen_op_buf[label_place->prev].next = br_ind;
+
+                instr_br->prev = instr_label->prev;
+
+                instr_label->prev = label_place->prev;
+                instr_label->next = label_idx;
+                label_place->prev = lbl_ind;
+            }
+            s->cur_jumps--;
+//            gen_eob1(s, eip);
+        } else {
+            gen_jmp_im(eip);
+            gen_eob1(s, eip);
+        }
     }
 }
 
@@ -8502,6 +8549,8 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
     cpu_ptr1 = tcg_temp_new_ptr();
     cpu_cc_srcT = tcg_temp_local_new();
 
+    dc->cur_instr_code = 0;
+
     return max_insns;
 }
 
@@ -8539,6 +8588,9 @@ static bool i386_tr_breakpoint_check(DisasContextBase *dcbase, CPUState *cpu,
 static void i386_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
 {
     DisasContext *dc = container_of(dcbase, DisasContext, base);
+    dc->instr_gen_code[dc->cur_instr_code].op_idx = tcg_ctx->gen_next_op_idx;
+    dc->instr_gen_code[dc->cur_instr_code++].pc = dcbase->pc_next;
+
     target_ulong pc_next = disas_insn(dc, cpu);
 
     if (dc->tf || (dc->base.tb->flags & HF_INHIBIT_IRQ_MASK)) {

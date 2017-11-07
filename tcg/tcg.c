@@ -23,7 +23,7 @@
  */
 
 /* define it to use liveness analysis (better code) */
-#define USE_TCG_OPTIMIZATIONS
+//#define USE_TCG_OPTIMIZATIONS
 
 #include "qemu/osdep.h"
 
@@ -3226,6 +3226,15 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
 
     num_insns = -1;
     for (oi = s->gen_op_buf[0].next; oi != 0; oi = oi_next) {
+//        fprintf(stderr, "Cur oi = %d\n", oi);
+        for(int i = 0; i < tb->cur_free_entry; i++) {
+            if(oi == tb->instr_num_mid_entries[i]) {
+                fprintf(stderr, "Found gen_mid_code: entry[%d] = %p\n", i, s->code_ptr);
+                tb->gen_mid_entries[i] = s->code_ptr;
+                break;
+            }
+        }
+
         TCGOp * const op = &s->gen_op_buf[oi];
         TCGOpcode opc = op->opc;
 
