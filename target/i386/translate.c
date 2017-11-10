@@ -98,6 +98,13 @@ typedef struct instr_gen_place {
     int op_idx;
 } instr_gen_place;
 
+typedef struct jump_to_resolve {
+    target_ulong pc;
+    TCGLabel *l;
+    int exit_idx;
+    int normal_idx;
+} jump_to_resolve;
+
 typedef struct DisasContext {
     DisasContextBase base;
 
@@ -146,6 +153,8 @@ typedef struct DisasContext {
 
     instr_gen_place instr_gen_code[1024];
     int cur_instr_code;
+    jump_to_resolve jumps_to_resolve[MAX_INNER_JUMPS];
+    int cur_jump_to_resolve;
 } DisasContext;
 
 static void gen_eob(DisasContext *s);
@@ -278,6 +287,11 @@ static void gen_update_cc_op(DisasContext *s)
         tcg_gen_movi_i32(cpu_cc_op, s->cc_op);
         s->cc_op_dirty = false;
     }
+}
+
+static bool is_backarc(DisasContext *s, target_ulong jump_eip)
+{
+    return s->base.pc_first <= jump_eip && jump_eip <= s->pc_start;
 }
 
 #ifdef TARGET_X86_64
@@ -1037,8 +1051,10 @@ static inline void gen_jcc1_noeob(DisasContext *s, int b, TCGLabel *l1)
     }
     if (cc.use_reg2) {
         tcg_gen_brcond_tl(cc.cond, cc.reg, cc.reg2, l1);
+        tcg_gen_brcond_tl(cc.cond, cc.reg, cc.reg2, tcg_ctx->exitreq_label);
     } else {
         tcg_gen_brcondi_tl(cc.cond, cc.reg, cc.imm, l1);
+        tcg_gen_brcondi_tl(cc.cond, cc.reg, cc.imm, tcg_ctx->exitreq_label);
     }
 }
 
@@ -2235,16 +2251,28 @@ static inline void gen_jcc(DisasContext *s, int b,
         gen_goto_tb(s, 1, val);
     } else {
         l1 = gen_new_label();
-        l2 = gen_new_label();
-        gen_jcc1(s, b, l1);
 
-        gen_jmp_im(next_eip);
-        tcg_gen_br(l2);
+        // legacy behavior
+        if (s->cur_jumps <= 0) {
+            gen_jcc1(s, b, l1);
+            l2 = gen_new_label();
 
-        gen_set_label(l1);
-        gen_jmp_im(val);
-        gen_set_label(l2);
-        gen_eob1(s, next_eip);
+            gen_jmp_im(next_eip);
+            tcg_gen_br(l2);
+
+            gen_set_label(l1);
+            gen_jmp_im(val);
+            gen_set_label(l2);
+            gen_eob1(s, next_eip);
+        } else {
+            gen_jcc1_noeob(s, b, l1);
+            s->cur_jumps--;
+            s->jumps_to_resolve[s->cur_jump_to_resolve].pc = val;
+            s->jumps_to_resolve[s->cur_jump_to_resolve].exit_idx = tcg_ctx->gen_next_op_idx -1;
+            s->jumps_to_resolve[s->cur_jump_to_resolve].normal_idx = tcg_ctx->gen_next_op_idx - 2;
+            s->jumps_to_resolve[s->cur_jump_to_resolve++].l = l1;
+            fprintf(stderr, "Adding jcc %lx for resolution\n", val);
+        }
     }
 }
 
@@ -2575,6 +2603,52 @@ static void
 do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr,
                   target_ulong next_eip)
 {
+    // Here we have two conseсutive brconds for 'jcc addr':
+    // 1) brcond addr
+    // 2) brcond tbexit
+    // One of them must be removed now
+    // In case of removing 2) we should also add a set_label instruction
+    // to the appropriate position
+    fprintf(stderr, "Resolving jumps...\n");
+    for(int i = 0; i < s->cur_jump_to_resolve; i++) {
+        bool found = false;
+        for(int j = 0; j < s->cur_instr_code; j++) {
+            if (s->instr_gen_code[j].pc == s->jumps_to_resolve[i].pc) {
+                TCGOp *br_exit = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].exit_idx;
+                TCGOp *br_addr = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].normal_idx;
+
+                tcg_ctx->gen_op_buf[br_exit->next].prev = s->jumps_to_resolve[i].normal_idx;
+                br_addr->next = br_exit->next;
+
+                gen_set_label(s->jumps_to_resolve[i].l);
+                int label_idx = tcg_ctx->gen_next_op_idx - 1;
+                int target_idx = s->instr_gen_code[j].op_idx;
+                TCGOp *label_op = tcg_ctx->gen_op_buf + label_idx;
+                TCGOp *target_op = tcg_ctx->gen_op_buf + target_idx;
+
+                tcg_ctx->gen_op_buf[target_op->prev].next = label_idx;
+                label_op->prev = target_op->prev;
+                label_op->next = target_idx;
+                target_op->prev = label_idx;
+
+                fprintf(stderr, "Resolved jump to %lx\n", s->jumps_to_resolve[i].pc);
+                fprintf(stderr, "Insterted label before [%s]\n",
+                        tcg_op_defs[target_op->opc].name);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            fprintf(stderr, "resolution failed - jump to the TB exit\n");
+
+            TCGOp *br_exit = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].exit_idx;
+            TCGOp *br_addr = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].normal_idx;
+            tcg_ctx->gen_op_buf[br_addr->prev].next = s->jumps_to_resolve[i].exit_idx;
+            br_exit->prev = br_addr->prev;
+        }
+    }
+
+
     gen_update_cc_op(s);
 
     /* If several instructions disable interrupts, only the first does it.  */
@@ -2597,23 +2671,24 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr,
     } else if (jr) {
         tcg_gen_lookup_and_goto_ptr();
     } else {
-        bool back_arc = false;//(s->base.pc_first <= next_eip && next_eip <= s->pc_start);
-        if(back_arc) {
-            fprintf(stderr, "Back arc found at %lx to %lx\n", s->pc_start,
-                    next_eip);
-            fprintf(stderr, "Op_idx = %d\n", tcg_ctx->gen_next_op_idx-1);
-            s->base.tb->mid_entries[s->base.tb->cur_free_entry] = next_eip;
-            s->base.tb->instr_num_mid_entries[s->base.tb->cur_free_entry++] = tcg_ctx->gen_next_op_idx-1;
-        } else if (s->cur_jumps > 0 && next_eip != -1) {
-            fprintf(stderr, "eob at %lx: cur_jumps[%d->%d], next_eip = %lx\n",
-                    s->pc_start, s->cur_jumps, s->cur_jumps - 1, next_eip);
-            s->cur_jumps--;
-            s->pc = next_eip;
-            s->base.is_jmp = DISAS_NEXT;
-            return;
-        }
-//        tcg_gen_exit_tb(0);
+//        bool back_arc = false;//is_backarc(s, next_eip);
+//        if(back_arc) {
+//            fprintf(stderr, "Back arc found at %lx to %lx\n", s->pc_start,
+//                    next_eip);
+//            fprintf(stderr, "Op_idx = %d\n", tcg_ctx->gen_next_op_idx-1);
+//            s->base.tb->mid_entries[s->base.tb->cur_free_entry] = next_eip;
+//            s->base.tb->instr_num_mid_entries[s->base.tb->cur_free_entry++] = tcg_ctx->gen_next_op_idx-1;
+//        } else if (s->cur_jumps > 0 && next_eip != -1) {
+//            fprintf(stderr, "eob at %lx: cur_jumps[%d->%d], next_eip = %lx\n",
+//                    s->pc_start, s->cur_jumps, s->cur_jumps - 1, next_eip);
+//            s->cur_jumps--;
+//            s->pc = next_eip;
+//            s->base.is_jmp = DISAS_NEXT;
+//            return;
+//        }
+        tcg_gen_exit_tb(0);
     }
+
     s->base.is_jmp = DISAS_NORETURN;
 }
 
@@ -2657,7 +2732,7 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
     if (s->jmp_opt) {
         gen_goto_tb(s, tb_num, eip);
     } else {
-        bool back_arc = (s->base.pc_first <= eip && eip <= s->pc_start);
+        bool back_arc = is_backarc(s, eip);
 
         if (back_arc) {
             TCGLabel *l = gen_new_label();
@@ -2704,9 +2779,9 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
                 s->base.tb->mid_entries[s->base.tb->cur_free_entry] = eip;
                 s->base.tb->instr_num_mid_entries[s->base.tb->cur_free_entry++] = tcg_ctx->gen_next_op_idx-1;
             }
-            s->cur_jumps--;
             gen_eob1(s, eip);
         } else {
+            s->cur_jumps--;
             gen_jmp_im(eip);
             gen_eob1(s, eip);
         }
@@ -8562,6 +8637,7 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
     cpu_cc_srcT = tcg_temp_local_new();
 
     dc->cur_instr_code = 0;
+    dc->cur_jump_to_resolve = 0;
 
     return max_insns;
 }
