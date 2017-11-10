@@ -2585,7 +2585,7 @@ static void temp_save(TCGContext *s, TCGTemp *ts, TCGRegSet allocated_regs)
 {
     /* The liveness analysis already ensures that globals are back
        in memory. Keep an tcg_debug_assert for safety. */
-    tcg_debug_assert(ts->val_type == TEMP_VAL_MEM || ts->fixed_reg);
+//    tcg_debug_assert(ts->val_type == TEMP_VAL_MEM || ts->fixed_reg);
 }
 
 /* save globals to their canonical location and assume they can be
@@ -2628,7 +2628,7 @@ static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs)
         } else {
             /* The liveness analysis already ensures that temps are dead.
                Keep an tcg_debug_assert for safety. */
-            tcg_debug_assert(ts->val_type == TEMP_VAL_DEAD);
+//            tcg_debug_assert(ts->val_type == TEMP_VAL_DEAD);
         }
     }
 
@@ -3177,7 +3177,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
     atomic_set(&prof->la_time, prof->la_time - profile_getclock());
 #endif
 
-    liveness_pass_1(s);
+//    liveness_pass_1(s);
 
     if (s->nb_indirects > 0) {
 #ifdef DEBUG_DISAS
@@ -3191,10 +3191,10 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
         }
 #endif
         /* Replace indirect temps with direct temps.  */
-        if (liveness_pass_2(s)) {
-            /* If changes were made, re-run liveness.  */
-            liveness_pass_1(s);
-        }
+//        if (liveness_pass_2(s)) {
+//            /* If changes were made, re-run liveness.  */
+//            liveness_pass_1(s);
+//        }
     }
 
 #ifdef CONFIG_PROFILER

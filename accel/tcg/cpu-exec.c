@@ -145,7 +145,7 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb,
     TranslationBlock *last_tb;
     int tb_exit;
     fprintf(stderr, "Offset = %lu\n", pc_start - itb->pc);
-    uint8_t *tb_ptr = itb->tc.ptr;
+    uint8_t *tb_ptr = itb->tc.ptr + pc_start - itb->pc;
 
     for(int i = 0; i < itb->cur_free_entry; i++) {
         if (pc_start == itb->mid_entries[i]) {
@@ -204,7 +204,8 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb,
 /* Execute the code without caching the generated code. An interpreter
    could be used if available. */
 static void cpu_exec_nocache(CPUState *cpu, int max_cycles,
-                             TranslationBlock *orig_tb, bool ignore_icount)
+                             TranslationBlock *orig_tb, bool ignore_icount,
+							 target_ulong tpc)
 {
     TranslationBlock *tb;
     uint32_t cflags = curr_cflags() | CF_NOCACHE;
@@ -225,7 +226,7 @@ static void cpu_exec_nocache(CPUState *cpu, int max_cycles,
 
     /* execute the generated code */
     trace_exec_tb_nocache(tb, tb->pc);
-    cpu_tb_exec(cpu, tb);
+    cpu_tb_exec(cpu, tb, tpc);
 
     tb_lock();
     tb_phys_invalidate(tb, -1);
@@ -387,6 +388,7 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
     tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &flags, cf_mask);
     *actual_pc = pc;
     fprintf(stderr, "Looking for the TB at %lx...\n", pc);
+    fflush(stderr);
     if (tb == NULL) {
         /* mmap_lock is needed by tb_gen_code, and mmap_lock must be
          * taken outside tb_lock. As system emulation is currently
@@ -416,8 +418,9 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
             fprintf(stderr, "Adding tb [%lx] to the cache\n", tb->mid_entries[i]);
             atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(tb->mid_entries[i])], tb);
         }
+    } else {
+    	fprintf(stderr, "Found\n");
     }
-    fprintf(stderr, "Found\n");
 #ifndef CONFIG_USER_ONLY
     /* We don't take care of direct jumps when address mapping changes in
      * system emulation. So it's not safe to make a direct jump to a TB
@@ -521,7 +524,8 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
     } else if (replay_has_exception()
                && cpu->icount_decr.u16.low + cpu->icount_extra == 0) {
         /* try to cause an exception pending in the log */
-        cpu_exec_nocache(cpu, 1, tb_find(cpu, NULL, 0, curr_cflags()), true);
+    	target_ulong tpc;
+        cpu_exec_nocache(cpu, 1, tb_find(cpu, NULL, 0, curr_cflags(), &tpc), true, tpc);
         *ret = -1;
         return true;
 #endif
@@ -659,7 +663,7 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
          * handle the next event.
          */
         if (insns_left > 0) {
-            cpu_exec_nocache(cpu, insns_left, tb, false);
+            cpu_exec_nocache(cpu, insns_left, tb, false, pc_start);
         }
     }
 #endif

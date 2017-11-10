@@ -2612,7 +2612,7 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr,
             s->base.is_jmp = DISAS_NEXT;
             return;
         }
-        tcg_gen_exit_tb(0);
+//        tcg_gen_exit_tb(0);
     }
     s->base.is_jmp = DISAS_NORETURN;
 }
@@ -2675,25 +2675,37 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
                         eip);
             } else {
                 TCGOp *label_place = tcg_ctx->gen_op_buf + label_idx;
+                fprintf(stderr, "Label_place = %s\n", tcg_op_defs[label_place->opc].name);
                 gen_set_label(l);
                 tcg_gen_br(l);
 
                 unsigned lbl_ind = tcg_ctx->gen_next_op_idx - 2;
                 unsigned br_ind = tcg_ctx->gen_next_op_idx - 1;
+
+                fprintf(stderr, "lbl = %s\n", tcg_op_defs[tcg_ctx->gen_op_buf[lbl_ind].opc].name);
+                fprintf(stderr, "br = %s\n", tcg_op_defs[tcg_ctx->gen_op_buf[br_ind].opc].name);
+
                 TCGOp *instr_label = tcg_ctx->gen_op_buf + lbl_ind;
                 TCGOp *instr_br = tcg_ctx->gen_op_buf + br_ind;
 
                 tcg_ctx->gen_op_buf[label_place->prev].next = lbl_ind;
-                tcg_ctx->gen_op_buf[label_place->prev].next = br_ind;
+                instr_label->next = label_idx;
+//                tcg_ctx->gen_op_buf[label_place->prev].next = br_ind;
 
                 instr_br->prev = instr_label->prev;
+                tcg_ctx->gen_op_buf[instr_label->prev].next = br_ind;
 
                 instr_label->prev = label_place->prev;
-                instr_label->next = label_idx;
                 label_place->prev = lbl_ind;
+
+                fprintf(stderr, "Back arc found at %lx to %lx\n", s->pc_start,
+                        eip);
+                fprintf(stderr, "Op_idx = %d\n", tcg_ctx->gen_next_op_idx-1);
+                s->base.tb->mid_entries[s->base.tb->cur_free_entry] = eip;
+                s->base.tb->instr_num_mid_entries[s->base.tb->cur_free_entry++] = tcg_ctx->gen_next_op_idx-1;
             }
             s->cur_jumps--;
-//            gen_eob1(s, eip);
+            gen_eob1(s, eip);
         } else {
             gen_jmp_im(eip);
             gen_eob1(s, eip);
@@ -8590,6 +8602,9 @@ static void i386_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     DisasContext *dc = container_of(dcbase, DisasContext, base);
     dc->instr_gen_code[dc->cur_instr_code].op_idx = tcg_ctx->gen_next_op_idx;
     dc->instr_gen_code[dc->cur_instr_code++].pc = dcbase->pc_next;
+
+//    fprintf(stderr, "Adding idx %d to pc = %lx\n", tcg_ctx->gen_next_op_idx,
+//    		dcbase->pc_next);
 
     target_ulong pc_next = disas_insn(dc, cpu);
 

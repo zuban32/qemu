@@ -10,6 +10,7 @@ static int icount_start_insn_idx;
 static inline void gen_tb_start(TranslationBlock *tb)
 {
     TCGv_i32 count, imm;
+    fprintf(stderr, "TB start: %lx\n", (uintptr_t)tb);
 
     tcg_ctx->exitreq_label = gen_new_label();
     if (tb_cflags(tb) & CF_USE_ICOUNT) {
@@ -52,6 +53,7 @@ static inline void gen_tb_end(TranslationBlock *tb, int num_insns)
     }
 
     gen_set_label(tcg_ctx->exitreq_label);
+    fprintf(stderr, "exit_tb: %lx\n", (uintptr_t)tb + TB_EXIT_REQUESTED);
     tcg_gen_exit_tb((uintptr_t)tb + TB_EXIT_REQUESTED);
 
     /* Terminate the linked list.  */
