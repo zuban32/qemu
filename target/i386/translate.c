@@ -1051,10 +1051,10 @@ static inline void gen_jcc1_noeob(DisasContext *s, int b, TCGLabel *l1)
     }
     if (cc.use_reg2) {
         tcg_gen_brcond_tl(cc.cond, cc.reg, cc.reg2, l1);
-        tcg_gen_brcond_tl(cc.cond, cc.reg, cc.reg2, tcg_ctx->exitreq_label);
+//        tcg_gen_brcond_tl(cc.cond, cc.reg, cc.reg2, tcg_ctx->exitreq_label);
     } else {
         tcg_gen_brcondi_tl(cc.cond, cc.reg, cc.imm, l1);
-        tcg_gen_brcondi_tl(cc.cond, cc.reg, cc.imm, tcg_ctx->exitreq_label);
+//        tcg_gen_brcondi_tl(cc.cond, cc.reg, cc.imm, tcg_ctx->exitreq_label);
     }
 }
 
@@ -2641,13 +2641,16 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr,
         if (!found) {
             fprintf(stderr, "resolution failed - jump to the TB exit\n");
 
-            TCGOp *br_exit = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].exit_idx;
-            TCGOp *br_addr = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].normal_idx;
-            tcg_ctx->gen_op_buf[br_addr->prev].next = s->jumps_to_resolve[i].exit_idx;
-            br_exit->prev = br_addr->prev;
+//            TCGOp *br_exit = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].exit_idx;
+//            TCGOp *br_addr = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].normal_idx;
+//            tcg_ctx->gen_op_buf[br_addr->prev].next = s->jumps_to_resolve[i].exit_idx;
+//            br_exit->prev = br_addr->prev;
+            gen_set_label(s->jumps_to_resolve[i].l);
+            gen_jmp_im(s->jumps_to_resolve[i].pc);
+            TCGLabel *fake_l = gen_new_label();
+            gen_set_label(fake_l);
         }
     }
-
 
     gen_update_cc_op(s);
 

@@ -2585,7 +2585,7 @@ static void temp_save(TCGContext *s, TCGTemp *ts, TCGRegSet allocated_regs)
 {
     /* The liveness analysis already ensures that globals are back
        in memory. Keep an tcg_debug_assert for safety. */
-//    tcg_debug_assert(ts->val_type == TEMP_VAL_MEM || ts->fixed_reg);
+    tcg_debug_assert(ts->val_type == TEMP_VAL_MEM || ts->fixed_reg);
 }
 
 /* save globals to their canonical location and assume they can be
@@ -2593,6 +2593,7 @@ static void temp_save(TCGContext *s, TCGTemp *ts, TCGRegSet allocated_regs)
    temporary registers needs to be allocated to store a constant. */
 static void save_globals(TCGContext *s, TCGRegSet allocated_regs)
 {
+	fprintf(stderr, "save globals\n");
     int i, n;
 
     for (i = 0, n = s->nb_globals; i < n; i++) {
@@ -2619,6 +2620,7 @@ static void sync_globals(TCGContext *s, TCGRegSet allocated_regs)
    all globals are stored at their canonical location. */
 static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs)
 {
+	fprintf(stderr, "TCG reg alloc bb end\n");
     int i;
 
     for (i = s->nb_globals; i < s->nb_temps; i++) {
@@ -2628,7 +2630,7 @@ static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs)
         } else {
             /* The liveness analysis already ensures that temps are dead.
                Keep an tcg_debug_assert for safety. */
-//            tcg_debug_assert(ts->val_type == TEMP_VAL_DEAD);
+            tcg_debug_assert(ts->val_type == TEMP_VAL_DEAD);
         }
     }
 
@@ -3177,7 +3179,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
     atomic_set(&prof->la_time, prof->la_time - profile_getclock());
 #endif
 
-//    liveness_pass_1(s);
+    liveness_pass_1(s);
 
     if (s->nb_indirects > 0) {
 #ifdef DEBUG_DISAS
@@ -3191,10 +3193,10 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
         }
 #endif
         /* Replace indirect temps with direct temps.  */
-//        if (liveness_pass_2(s)) {
-//            /* If changes were made, re-run liveness.  */
-//            liveness_pass_1(s);
-//        }
+        if (liveness_pass_2(s)) {
+            /* If changes were made, re-run liveness.  */
+            liveness_pass_1(s);
+        }
     }
 
 #ifdef CONFIG_PROFILER
@@ -3243,6 +3245,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
         atomic_set(&prof->table_op_count[opc], prof->table_op_count[opc] + 1);
 #endif
 
+    	fprintf(stderr, "tcg_gen_code: %s\n", tcg_op_defs[opc].name);
         switch (opc) {
         case INDEX_op_mov_i32:
         case INDEX_op_mov_i64:

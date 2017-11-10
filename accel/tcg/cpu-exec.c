@@ -628,6 +628,7 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
     ret = cpu_tb_exec(cpu, tb, pc_start);
     tb = (TranslationBlock *)(ret & ~TB_EXIT_MASK);
     *tb_exit = ret & TB_EXIT_MASK;
+    fprintf(stderr, "tb_exit = %d\n", *tb_exit);
     if (*tb_exit != TB_EXIT_REQUESTED) {
         *last_tb = tb;
         return;
@@ -635,6 +636,7 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
 
     *last_tb = NULL;
     insns_left = atomic_read(&cpu->icount_decr.u32);
+    fprintf(stderr, "insns_left = %d\n", insns_left);
     atomic_set(&cpu->icount_decr.u16.high, 0);
     if (insns_left < 0) {
         /* Something asked us to stop executing chained TBs; just
