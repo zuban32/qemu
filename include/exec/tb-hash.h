@@ -53,7 +53,9 @@ static inline unsigned int tb_jmp_cache_hash_func(target_ulong pc)
 static inline unsigned int tb_jmp_cache_hash_func(target_ulong pc)
 {
     unsigned int res = (pc ^ (pc >> TB_JMP_CACHE_BITS)) & (TB_JMP_CACHE_SIZE - 1);
+#ifdef ENABLE_BIG_TB
     fprintf(stderr, "Hash(%lx) = %x\n", pc, res);
+#endif
     return res;
 }
 

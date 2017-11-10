@@ -27,6 +27,8 @@
 /* allow to see translation results - the slowdown should be negligible, so we leave it */
 #define DEBUG_DISAS
 
+//#define ENABLE_BIG_TB
+
 /* Page tracking code uses ram addresses in system mode, and virtual
    addresses in userspace mode.  Define tb_page_addr_t to be an appropriate
    type.  */
@@ -318,11 +320,13 @@ struct tb_tc {
 
 struct TranslationBlock {
     target_ulong pc;   /* simulated PC corresponding to this block (EIP + CS base) */
+#ifdef ENABLE_BIG_TB
 #define MAX_INNER_JUMPS 1
     target_ulong mid_entries[MAX_INNER_JUMPS];
     uint8_t *gen_mid_entries[MAX_INNER_JUMPS];
     unsigned instr_num_mid_entries[MAX_INNER_JUMPS];
     int cur_free_entry;
+#endif
 
     target_ulong cs_base; /* CS base for this block */
     uint32_t flags; /* flags defining in which context the code was generated */

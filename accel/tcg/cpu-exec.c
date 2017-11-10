@@ -144,15 +144,22 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb,
     uintptr_t ret;
     TranslationBlock *last_tb;
     int tb_exit;
-    fprintf(stderr, "Offset = %lu\n", pc_start - itb->pc);
-    uint8_t *tb_ptr = itb->tc.ptr + pc_start - itb->pc;
 
+    target_ulong tb_offset = 0;
+#ifdef ENABLE_BIG_TB
+    tb_offset = pc_start - itb->pc;
+    fprintf(stderr, "Offset = %lu\n", pc_start - itb->pc);
+#endif
+    uint8_t *tb_ptr = itb->tc.ptr + tb_offset;
+
+#ifdef ENABLE_BIG_TB
     for(int i = 0; i < itb->cur_free_entry; i++) {
         if (pc_start == itb->mid_entries[i]) {
             tb_ptr = itb->gen_mid_entries[i];
             break;
         }
     }
+#endif
 
     qemu_log_mask_and_addr(CPU_LOG_EXEC, pc_start,
                            "Trace %p [%d: " TARGET_FMT_lx "] %s\n",
@@ -386,9 +393,10 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
     bool acquired_tb_lock = false;
 
     tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &flags, cf_mask);
+#ifdef ENABLE_BIG_TB
     *actual_pc = pc;
     fprintf(stderr, "Looking for the TB at %lx...\n", pc);
-    fflush(stderr);
+#endif
     if (tb == NULL) {
         /* mmap_lock is needed by tb_gen_code, and mmap_lock must be
          * taken outside tb_lock. As system emulation is currently
@@ -403,23 +411,31 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
          */
         tb = tb_htable_lookup(cpu, pc, cs_base, flags, cf_mask);
         if (likely(tb == NULL)) {
+#ifdef ENABLE_BIG_TB
             fprintf(stderr, "Not found\n");
+#endif
             /* if no translated code available, then translate it now */
             tb = tb_gen_code(cpu, pc, cs_base, flags, cf_mask);
         } else {
+#ifdef ENABLE_BIG_TB
             fprintf(stderr, "Found\n");
+#endif
         }
 
         mmap_unlock();
         /* We add the TB in the virtual pc hash table for the fast lookup */
+#ifdef ENABLE_BIG_TB
         fprintf(stderr, "Adding tb [%lx] to the cache\n", pc);
+#endif
         atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(pc)], tb);
+#ifdef ENABLE_BIG_TB
         for(int i = 0; i < tb->cur_free_entry; i++) {
             fprintf(stderr, "Adding tb [%lx] to the cache\n", tb->mid_entries[i]);
             atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(tb->mid_entries[i])], tb);
         }
     } else {
     	fprintf(stderr, "Found\n");
+#endif
     }
 #ifndef CONFIG_USER_ONLY
     /* We don't take care of direct jumps when address mapping changes in
@@ -628,7 +644,9 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
     ret = cpu_tb_exec(cpu, tb, pc_start);
     tb = (TranslationBlock *)(ret & ~TB_EXIT_MASK);
     *tb_exit = ret & TB_EXIT_MASK;
+#ifdef ENABLE_BIG_TB
     fprintf(stderr, "tb_exit = %d\n", *tb_exit);
+#endif
     if (*tb_exit != TB_EXIT_REQUESTED) {
         *last_tb = tb;
         return;
@@ -636,7 +654,9 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
 
     *last_tb = NULL;
     insns_left = atomic_read(&cpu->icount_decr.u32);
+#ifdef ENABLE_BIG_TB
     fprintf(stderr, "insns_left = %d\n", insns_left);
+#endif
     atomic_set(&cpu->icount_decr.u16.high, 0);
     if (insns_left < 0) {
         /* Something asked us to stop executing chained TBs; just
@@ -738,7 +758,7 @@ int cpu_exec(CPUState *cpu)
                 cpu->cflags_next_tb = -1;
             }
 
-            target_ulong pc_start;
+            target_ulong pc_start = 0;
             tb = tb_find(cpu, last_tb, tb_exit, cflags, &pc_start);
             cpu_loop_exec_tb(cpu, tb, &last_tb, &tb_exit, pc_start);
             /* Try to align the host and virtual clocks

@@ -23,7 +23,9 @@
  */
 
 /* define it to use liveness analysis (better code) */
-//#define USE_TCG_OPTIMIZATIONS
+#ifndef ENABLE_BIG_TB
+#define USE_TCG_OPTIMIZATIONS
+#endif
 
 #include "qemu/osdep.h"
 
@@ -2593,7 +2595,6 @@ static void temp_save(TCGContext *s, TCGTemp *ts, TCGRegSet allocated_regs)
    temporary registers needs to be allocated to store a constant. */
 static void save_globals(TCGContext *s, TCGRegSet allocated_regs)
 {
-	fprintf(stderr, "save globals\n");
     int i, n;
 
     for (i = 0, n = s->nb_globals; i < n; i++) {
@@ -2620,7 +2621,6 @@ static void sync_globals(TCGContext *s, TCGRegSet allocated_regs)
    all globals are stored at their canonical location. */
 static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs)
 {
-	fprintf(stderr, "TCG reg alloc bb end\n");
     int i;
 
     for (i = s->nb_globals; i < s->nb_temps; i++) {
@@ -3228,7 +3228,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
 
     num_insns = -1;
     for (oi = s->gen_op_buf[0].next; oi != 0; oi = oi_next) {
-//        fprintf(stderr, "Cur oi = %d\n", oi);
+#ifdef ENABLE_BIG_TB
         for(int i = 0; i < tb->cur_free_entry; i++) {
             if(oi == tb->instr_num_mid_entries[i]) {
                 fprintf(stderr, "Found gen_mid_code: entry[%d] = %p\n", i, s->code_ptr);
@@ -3236,6 +3236,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
                 break;
             }
         }
+#endif
 
         TCGOp * const op = &s->gen_op_buf[oi];
         TCGOpcode opc = op->opc;
@@ -3245,7 +3246,6 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
         atomic_set(&prof->table_op_count[opc], prof->table_op_count[opc] + 1);
 #endif
 
-    	fprintf(stderr, "tcg_gen_code: %s\n", tcg_op_defs[opc].name);
         switch (opc) {
         case INDEX_op_mov_i32:
         case INDEX_op_mov_i64:
