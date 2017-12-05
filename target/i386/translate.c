@@ -156,6 +156,7 @@ typedef struct DisasContext {
     int cur_instr_code;
     jump_to_resolve jumps_to_resolve[MAX_INNER_JUMPS];
     int cur_jump_to_resolve;
+    bool jumps_resolved;
 #endif
 } DisasContext;
 
@@ -2262,7 +2263,7 @@ static inline void gen_jcc(DisasContext *s, int b,
             gen_eob(s);
 #ifdef ENABLE_BIG_TB
         } else {
-            gen_jcc1_noeob(s, b, l1);
+            gen_jcc1(s, b, l1);
             s->cur_jumps--;
             s->jumps_to_resolve[s->cur_jump_to_resolve].pc = val;
             s->jumps_to_resolve[s->cur_jump_to_resolve].exit_idx = tcg_ctx->gen_next_op_idx -1;
@@ -2601,43 +2602,46 @@ static void
 do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
 {
 #ifdef ENABLE_BIG_TB
-    fprintf(stderr, "Resolving jumps...\n");
-    for(int i = 0; i < s->cur_jump_to_resolve; i++) {
-        bool found = false;
-        for(int j = 0; j < s->cur_instr_code; j++) {
-            if (s->instr_gen_code[j].pc == s->jumps_to_resolve[i].pc) {
-                TCGOp *br_exit = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].exit_idx;
-                TCGOp *br_addr = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].normal_idx;
+    TCGLabel *exit_l = gen_new_label();
+    tcg_gen_br(exit_l);
+    if(!s->jumps_resolved) {
+        fprintf(stderr, "Resolving jumps...\n");
+        for(int i = 0; i < s->cur_jump_to_resolve; i++) {
+            bool found = false;
+            for(int j = 0; j < s->cur_instr_code; j++) {
+                if (s->instr_gen_code[j].pc == s->jumps_to_resolve[i].pc) {
+                    gen_set_label(s->jumps_to_resolve[i].l);
+                    int label_idx = tcg_ctx->gen_next_op_idx - 1;
+                    int target_idx = s->instr_gen_code[j].op_idx;
+                    TCGOp *label_op = tcg_ctx->gen_op_buf + label_idx;
+                    TCGOp *target_op = tcg_ctx->gen_op_buf + target_idx;
+                    tcg_gen_br(exit_l);
 
-                tcg_ctx->gen_op_buf[br_exit->next].prev = s->jumps_to_resolve[i].normal_idx;
-                br_addr->next = br_exit->next;
+                    tcg_ctx->gen_op_buf[target_op->prev].next = label_idx;
+                    tcg_ctx->gen_op_buf[label_op->prev].next = label_op->next;
 
+                    tcg_ctx->gen_op_buf[label_op->next].prev = label_op->prev;
+                    label_op->prev = target_op->prev;
+                    label_op->next = target_idx;
+                    target_op->prev = label_idx;
+
+                    fprintf(stderr, "Resolved jump to %lx\n", s->jumps_to_resolve[i].pc);
+                    fprintf(stderr, "Inserted label before [%s]\n",
+                            tcg_op_defs[target_op->opc].name);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                fprintf(stderr, "resolution failed - jump to the TB exit\n");
                 gen_set_label(s->jumps_to_resolve[i].l);
-                int label_idx = tcg_ctx->gen_next_op_idx - 1;
-                int target_idx = s->instr_gen_code[j].op_idx;
-                TCGOp *label_op = tcg_ctx->gen_op_buf + label_idx;
-                TCGOp *target_op = tcg_ctx->gen_op_buf + target_idx;
-
-                tcg_ctx->gen_op_buf[target_op->prev].next = label_idx;
-                label_op->prev = target_op->prev;
-                label_op->next = target_idx;
-                target_op->prev = label_idx;
-
-                fprintf(stderr, "Resolved jump to %lx\n", s->jumps_to_resolve[i].pc);
-                fprintf(stderr, "Insterted label before [%s]\n",
-                        tcg_op_defs[target_op->opc].name);
-                found = true;
-                break;
+                gen_jmp_im(s->jumps_to_resolve[i].pc);
+                tcg_gen_br(exit_l);
             }
         }
-        if (!found) {
-            fprintf(stderr, "resolution failed - jump to the TB exit\n");
-            gen_set_label(s->jumps_to_resolve[i].l);
-            gen_jmp_im(s->jumps_to_resolve[i].pc);
-            TCGLabel *fake_l = gen_new_label();
-            gen_set_label(fake_l);
-        }
+        s->jumps_resolved = true;
     }
+    gen_set_label(exit_l);
 #endif
     gen_update_cc_op(s);
 
@@ -2703,7 +2707,7 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
 #ifdef ENABLE_BIG_TB
         bool back_arc = is_backarc(s, eip);
 
-        if (back_arc) {
+        if (back_arc && s->pc_start != eip) {
             TCGLabel *l = gen_new_label();
             int label_idx = -1;
 
