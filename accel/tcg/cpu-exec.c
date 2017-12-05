@@ -145,12 +145,7 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb,
     TranslationBlock *last_tb;
     int tb_exit;
 
-    target_ulong tb_offset = 0;
-#ifdef ENABLE_BIG_TB
-    tb_offset = pc_start - itb->pc;
-    fprintf(stderr, "Offset = %lu\n", pc_start - itb->pc);
-#endif
-    uint8_t *tb_ptr = itb->tc.ptr + tb_offset;
+    uint8_t *tb_ptr = itb->tc.ptr;
 
 #ifdef ENABLE_BIG_TB
     for(int i = 0; i < itb->cur_free_entry; i++) {
@@ -395,7 +390,9 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
     tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &flags, cf_mask);
 #ifdef ENABLE_BIG_TB
     *actual_pc = pc;
+#ifdef DEBUG_BIG_TB
     fprintf(stderr, "Looking for the TB at %lx...\n", pc);
+#endif
 #endif
     if (tb == NULL) {
         /* mmap_lock is needed by tb_gen_code, and mmap_lock must be
@@ -411,30 +408,34 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
          */
         tb = tb_htable_lookup(cpu, pc, cs_base, flags, cf_mask);
         if (likely(tb == NULL)) {
-#ifdef ENABLE_BIG_TB
+#if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
             fprintf(stderr, "Not found\n");
 #endif
             /* if no translated code available, then translate it now */
             tb = tb_gen_code(cpu, pc, cs_base, flags, cf_mask);
         } else {
-#ifdef ENABLE_BIG_TB
+#if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
             fprintf(stderr, "Found\n");
 #endif
         }
 
         mmap_unlock();
         /* We add the TB in the virtual pc hash table for the fast lookup */
-#ifdef ENABLE_BIG_TB
+#if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
         fprintf(stderr, "Adding tb [%lx] to the cache\n", pc);
 #endif
         atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(pc)], tb);
 #ifdef ENABLE_BIG_TB
         for(int i = 0; i < tb->cur_free_entry; i++) {
+#ifdef DEBUG_BIG_TB
             fprintf(stderr, "Adding tb [%lx] to the cache\n", tb->mid_entries[i]);
+#endif
             atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(tb->mid_entries[i])], tb);
         }
     } else {
-    	fprintf(stderr, "Found\n");
+#ifdef DEBUG_BIG_TB
+        fprintf(stderr, "Found\n");
+#endif
 #endif
     }
 #ifndef CONFIG_USER_ONLY
@@ -644,7 +645,7 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
     ret = cpu_tb_exec(cpu, tb, pc_start);
     tb = (TranslationBlock *)(ret & ~TB_EXIT_MASK);
     *tb_exit = ret & TB_EXIT_MASK;
-#ifdef ENABLE_BIG_TB
+#if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
     fprintf(stderr, "tb_exit = %d\n", *tb_exit);
 #endif
     if (*tb_exit != TB_EXIT_REQUESTED) {
@@ -654,7 +655,7 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
 
     *last_tb = NULL;
     insns_left = atomic_read(&cpu->icount_decr.u32);
-#ifdef ENABLE_BIG_TB
+#if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
     fprintf(stderr, "insns_left = %d\n", insns_left);
 #endif
     atomic_set(&cpu->icount_decr.u16.high, 0);

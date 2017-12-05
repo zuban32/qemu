@@ -10,7 +10,7 @@ static int icount_start_insn_idx;
 static inline void gen_tb_start(TranslationBlock *tb)
 {
     TCGv_i32 count, imm;
-#ifdef ENABLE_BIG_TB
+#if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
     fprintf(stderr, "TB start: %lx\n", (uintptr_t)tb);
 #endif
 

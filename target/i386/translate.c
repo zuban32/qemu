@@ -2269,7 +2269,9 @@ static inline void gen_jcc(DisasContext *s, int b,
             s->jumps_to_resolve[s->cur_jump_to_resolve].exit_idx = tcg_ctx->gen_next_op_idx -1;
             s->jumps_to_resolve[s->cur_jump_to_resolve].normal_idx = tcg_ctx->gen_next_op_idx - 2;
             s->jumps_to_resolve[s->cur_jump_to_resolve++].l = l1;
+#ifdef DEBUG_BIG_TB
             fprintf(stderr, "Adding jcc %lx for resolution\n", val);
+#endif
         }
 #endif
     }
@@ -2605,7 +2607,9 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
     TCGLabel *exit_l = gen_new_label();
     tcg_gen_br(exit_l);
     if(!s->jumps_resolved) {
+#ifdef DEBUG_BIG_TB
         fprintf(stderr, "Resolving jumps...\n");
+#endif
         for(int i = 0; i < s->cur_jump_to_resolve; i++) {
             bool found = false;
             for(int j = 0; j < s->cur_instr_code; j++) {
@@ -2625,15 +2629,17 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
                     label_op->next = target_idx;
                     target_op->prev = label_idx;
 
+#ifdef DEBUG_BIG_TB
                     fprintf(stderr, "Resolved jump to %lx\n", s->jumps_to_resolve[i].pc);
-                    fprintf(stderr, "Inserted label before [%s]\n",
-                            tcg_op_defs[target_op->opc].name);
+#endif
                     found = true;
                     break;
                 }
             }
             if (!found) {
+#ifdef DEBUG_BIG_TB
                 fprintf(stderr, "resolution failed - jump to the TB exit\n");
+#endif
                 gen_set_label(s->jumps_to_resolve[i].l);
                 gen_jmp_im(s->jumps_to_resolve[i].pc);
                 tcg_gen_br(exit_l);
@@ -2718,12 +2724,8 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
                 }
             }
 
-            if(label_idx == -1) {
-                fprintf(stderr, "A place for label at pc = %lx wasn't found!\n",
-                        eip);
-            } else {
+            if(label_idx != -1) {
                 TCGOp *label_place = tcg_ctx->gen_op_buf + label_idx;
-                fprintf(stderr, "Label_place = %s\n", tcg_op_defs[label_place->opc].name);
                 gen_set_label(l);
                 tcg_gen_br(l);
 
@@ -2742,9 +2744,10 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
                 instr_label->prev = label_place->prev;
                 label_place->prev = lbl_ind;
 
+#ifdef DEBUG_BIG_TB
                 fprintf(stderr, "Back arc found at %lx to %lx\n", s->pc_start,
                         eip);
-                fprintf(stderr, "Op_idx = %d\n", tcg_ctx->gen_next_op_idx-1);
+#endif
                 s->base.tb->mid_entries[s->base.tb->cur_free_entry] = eip;
                 s->base.tb->instr_num_mid_entries[s->base.tb->cur_free_entry++] = tcg_ctx->gen_next_op_idx-1;
             }

@@ -3231,7 +3231,6 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
 #ifdef ENABLE_BIG_TB
         for(int i = 0; i < tb->cur_free_entry; i++) {
             if(oi == tb->instr_num_mid_entries[i]) {
-                fprintf(stderr, "Found gen_mid_code: entry[%d] = %p\n", i, s->code_ptr);
                 tb->gen_mid_entries[i] = s->code_ptr;
                 break;
             }
