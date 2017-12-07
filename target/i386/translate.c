@@ -8616,6 +8616,7 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
     dc->cur_jumps = MAX_INNER_JUMPS;
     dc->cur_instr_code = 0;
     dc->cur_jump_to_resolve = 0;
+    dc->jumps_resolved = false;
 #endif
 
     return max_insns;
