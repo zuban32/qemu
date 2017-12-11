@@ -391,7 +391,7 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
 #ifdef ENABLE_BIG_TB
     *actual_pc = pc;
 #ifdef DEBUG_BIG_TB
-    fprintf(stderr, "Looking for the TB at %lx...\n", pc);
+    fprintf(stderr, "Looking for the TB at %x...\n", pc);
 #endif
 #endif
     if (tb == NULL) {
@@ -422,15 +422,15 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
         mmap_unlock();
         /* We add the TB in the virtual pc hash table for the fast lookup */
 #if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
-        fprintf(stderr, "Adding tb [%lx] to the cache\n", pc);
+        fprintf(stderr, "Adding tb [%x] to the cache\n", pc);
 #endif
         atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(pc)], tb);
 #ifdef ENABLE_BIG_TB
         for(int i = 0; i < tb->cur_free_entry; i++) {
 #ifdef DEBUG_BIG_TB
-            fprintf(stderr, "Adding tb [%lx] to the cache\n", tb->mid_entries[i]);
+            fprintf(stderr, "Adding tb [%x] to the cache\n", tb->mid_entries[i]);
 #endif
-            atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(tb->mid_entries[i])], tb);
+//            atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(tb->mid_entries[i])], tb);
         }
     } else {
 #ifdef DEBUG_BIG_TB
@@ -541,7 +541,7 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
     } else if (replay_has_exception()
                && cpu->icount_decr.u16.low + cpu->icount_extra == 0) {
         /* try to cause an exception pending in the log */
-    	target_ulong tpc;
+        target_ulong tpc = 0;
         cpu_exec_nocache(cpu, 1, tb_find(cpu, NULL, 0, curr_cflags(), &tpc), true, tpc);
         *ret = -1;
         return true;

@@ -102,8 +102,6 @@ typedef struct instr_gen_place {
 typedef struct jump_to_resolve {
     target_ulong pc;
     TCGLabel *l;
-    int exit_idx;
-    int normal_idx;
 } jump_to_resolve;
 #endif
 
@@ -162,8 +160,8 @@ typedef struct DisasContext {
 
 static void gen_eob(DisasContext *s);
 static void gen_jr(DisasContext *s, TCGv dest);
-static void gen_jmp(DisasContext *s, target_ulong eip);
-static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num);
+static void gen_jmp(DisasContext *s, target_ulong eip, bool break_tb);
+static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num, bool break_tb);
 static void gen_op(DisasContext *s1, int op, TCGMemOp ot, int d);
 
 /* i386 arith/logic operations */
@@ -1088,7 +1086,7 @@ static TCGLabel *gen_jz_ecx_string(DisasContext *s, target_ulong next_eip)
     TCGLabel *l2 = gen_new_label();
     gen_op_jnz_ecx(s->aflag, l1);
     gen_set_label(l2);
-    gen_jmp_tb(s, next_eip, 1);
+    gen_jmp_tb(s, next_eip, 1, true);
     gen_set_label(l1);
     return l2;
 }
@@ -1201,7 +1199,7 @@ static inline void gen_repz_ ## op(DisasContext *s, TCGMemOp ot,              \
        before rep string_insn */                                              \
     if (s->repz_opt)                                                          \
         gen_op_jz_ecx(s->aflag, l2);                                          \
-    gen_jmp(s, cur_eip);                                                      \
+    gen_jmp(s, cur_eip, true);                                                      \
 }
 
 #define GEN_REPZ2(op)                                                         \
@@ -1219,7 +1217,7 @@ static inline void gen_repz_ ## op(DisasContext *s, TCGMemOp ot,              \
     gen_jcc1(s, (JCC_Z << 1) | (nz ^ 1), l2);                                 \
     if (s->repz_opt)                                                          \
         gen_op_jz_ecx(s->aflag, l2);                                          \
-    gen_jmp(s, cur_eip);                                                      \
+    gen_jmp(s, cur_eip, true);                                                      \
 }
 
 GEN_REPZ(movs)
@@ -2266,11 +2264,9 @@ static inline void gen_jcc(DisasContext *s, int b,
             gen_jcc1(s, b, l1);
             s->cur_jumps--;
             s->jumps_to_resolve[s->cur_jump_to_resolve].pc = val;
-            s->jumps_to_resolve[s->cur_jump_to_resolve].exit_idx = tcg_ctx->gen_next_op_idx -1;
-            s->jumps_to_resolve[s->cur_jump_to_resolve].normal_idx = tcg_ctx->gen_next_op_idx - 2;
             s->jumps_to_resolve[s->cur_jump_to_resolve++].l = l1;
 #ifdef DEBUG_BIG_TB
-            fprintf(stderr, "Adding jcc %lx for resolution\n", val);
+            fprintf(stderr, "Adding jcc %x for resolution\n", val);
 #endif
         }
 #endif
@@ -2614,25 +2610,29 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
             bool found = false;
             for(int j = 0; j < s->cur_instr_code; j++) {
                 if (s->instr_gen_code[j].pc == s->jumps_to_resolve[i].pc) {
+                    int label_start_idx = tcg_ctx->gen_next_op_idx;
                     gen_set_label(s->jumps_to_resolve[i].l);
+                    gen_tb_start(s->base.tb);
                     int label_idx = tcg_ctx->gen_next_op_idx - 1;
                     int target_idx = s->instr_gen_code[j].op_idx;
                     TCGOp *label_op = tcg_ctx->gen_op_buf + label_idx;
                     TCGOp *target_op = tcg_ctx->gen_op_buf + target_idx;
+                    TCGOp *label_start_op = tcg_ctx->gen_op_buf + label_start_idx;
                     tcg_gen_br(exit_l);
 
-                    tcg_ctx->gen_op_buf[target_op->prev].next = label_idx;
-                    tcg_ctx->gen_op_buf[label_op->prev].next = label_op->next;
+                    tcg_ctx->gen_op_buf[target_op->prev].next = label_start_idx;
+                    tcg_ctx->gen_op_buf[label_start_op->prev].next = label_op->next;
 
-                    tcg_ctx->gen_op_buf[label_op->next].prev = label_op->prev;
-                    label_op->prev = target_op->prev;
+                    tcg_ctx->gen_op_buf[label_op->next].prev = label_start_op->prev;
+                    label_start_op->prev = target_op->prev;
                     label_op->next = target_idx;
                     target_op->prev = label_idx;
 
 #ifdef DEBUG_BIG_TB
-                    fprintf(stderr, "Resolved jump to %lx\n", s->jumps_to_resolve[i].pc);
+                    fprintf(stderr, "Resolved jump to %x\n", s->jumps_to_resolve[i].pc);
 #endif
                     found = true;
+                    s->instr_gen_code[j].op_idx = label_start_idx;
                     break;
                 }
             }
@@ -2640,6 +2640,7 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
 #ifdef DEBUG_BIG_TB
                 fprintf(stderr, "resolution failed - jump to the TB exit\n");
 #endif
+                gen_tb_start(s->base.tb);
                 gen_set_label(s->jumps_to_resolve[i].l);
                 gen_jmp_im(s->jumps_to_resolve[i].pc);
                 tcg_gen_br(exit_l);
@@ -2703,13 +2704,14 @@ static void gen_jr(DisasContext *s, TCGv dest)
 
 /* generate a jump to eip. No segment change must happen before as a
    direct call to the next block may occur */
-static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
+static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num,
+        bool break_tb)
 {
     gen_update_cc_op(s);
     set_cc_op(s, CC_OP_DYNAMIC);
     if (s->jmp_opt) {
         gen_goto_tb(s, tb_num, eip);
-    } else {
+    } else if (!break_tb) {
 #ifdef ENABLE_BIG_TB
         bool back_arc = is_backarc(s, eip);
 
@@ -2726,26 +2728,29 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
 
             if(label_idx != -1) {
                 TCGOp *label_place = tcg_ctx->gen_op_buf + label_idx;
+                unsigned lbl_start = tcg_ctx->gen_next_op_idx;
                 gen_set_label(l);
+                gen_tb_start(s->base.tb);
+                unsigned lbl_end = tcg_ctx->gen_next_op_idx - 1;
                 tcg_gen_br(l);
 
-                unsigned lbl_ind = tcg_ctx->gen_next_op_idx - 2;
                 unsigned br_ind = tcg_ctx->gen_next_op_idx - 1;
 
-                TCGOp *instr_label = tcg_ctx->gen_op_buf + lbl_ind;
+                TCGOp *instr_label_start = tcg_ctx->gen_op_buf + lbl_start;
+                TCGOp *instr_label_end = tcg_ctx->gen_op_buf + lbl_end;
                 TCGOp *instr_br = tcg_ctx->gen_op_buf + br_ind;
 
-                tcg_ctx->gen_op_buf[label_place->prev].next = lbl_ind;
-                instr_label->next = label_idx;
+                tcg_ctx->gen_op_buf[label_place->prev].next = lbl_start;
+                instr_label_end->next = label_idx;
 
-                instr_br->prev = instr_label->prev;
-                tcg_ctx->gen_op_buf[instr_label->prev].next = br_ind;
+                instr_br->prev = instr_label_start->prev;
+                tcg_ctx->gen_op_buf[instr_label_start->prev].next = br_ind;
 
-                instr_label->prev = label_place->prev;
-                label_place->prev = lbl_ind;
+                instr_label_start->prev = label_place->prev;
+                label_place->prev = lbl_end;
 
 #ifdef DEBUG_BIG_TB
-                fprintf(stderr, "Back arc found at %lx to %lx\n", s->pc_start,
+                fprintf(stderr, "Back arc found at %x to %x\n", s->pc_start,
                         eip);
 #endif
                 s->base.tb->mid_entries[s->base.tb->cur_free_entry] = eip;
@@ -2759,12 +2764,15 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
         gen_jmp_im(eip);
 #endif
         gen_eob(s);
+    } else {
+        gen_jmp_im(eip);
+        gen_eob(s);
     }
 }
 
-static void gen_jmp(DisasContext *s, target_ulong eip)
+static void gen_jmp(DisasContext *s, target_ulong eip, bool break_tb)
 {
-    gen_jmp_tb(s, eip, 0);
+    gen_jmp_tb(s, eip, 0, break_tb);
 }
 
 static inline void gen_ldq_env_A0(DisasContext *s, int offset)
@@ -6479,7 +6487,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         } else {
             gen_ins(s, ot);
             if (tb_cflags(s->base.tb) & CF_USE_ICOUNT) {
-                gen_jmp(s, s->pc - s->cs_base);
+                gen_jmp(s, s->pc - s->cs_base, false);
             }
         }
         break;
@@ -6494,7 +6502,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         } else {
             gen_outs(s, ot);
             if (tb_cflags(s->base.tb) & CF_USE_ICOUNT) {
-                gen_jmp(s, s->pc - s->cs_base);
+                gen_jmp(s, s->pc - s->cs_base, false);
             }
         }
         break;
@@ -6518,7 +6526,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         gen_bpt_io(s, cpu_tmp2_i32, ot);
         if (tb_cflags(s->base.tb) & CF_USE_ICOUNT) {
             gen_io_end();
-            gen_jmp(s, s->pc - s->cs_base);
+            gen_jmp(s, s->pc - s->cs_base, false);
         }
         break;
     case 0xe6:
@@ -6539,7 +6547,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         gen_bpt_io(s, cpu_tmp2_i32, ot);
         if (tb_cflags(s->base.tb) & CF_USE_ICOUNT) {
             gen_io_end();
-            gen_jmp(s, s->pc - s->cs_base);
+            gen_jmp(s, s->pc - s->cs_base, false);
         }
         break;
     case 0xec:
@@ -6557,7 +6565,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         gen_bpt_io(s, cpu_tmp2_i32, ot);
         if (tb_cflags(s->base.tb) & CF_USE_ICOUNT) {
             gen_io_end();
-            gen_jmp(s, s->pc - s->cs_base);
+            gen_jmp(s, s->pc - s->cs_base, false);
         }
         break;
     case 0xee:
@@ -6577,7 +6585,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         gen_bpt_io(s, cpu_tmp2_i32, ot);
         if (tb_cflags(s->base.tb) & CF_USE_ICOUNT) {
             gen_io_end();
-            gen_jmp(s, s->pc - s->cs_base);
+            gen_jmp(s, s->pc - s->cs_base, false);
         }
         break;
 
@@ -6664,7 +6672,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
             tcg_gen_movi_tl(cpu_T0, next_eip);
             gen_push_v(s, cpu_T0);
             gen_bnd_jmp(s);
-            gen_jmp(s, tval);
+            gen_jmp(s, tval, true);
         }
         break;
     case 0x9a: /* lcall im */
@@ -6694,7 +6702,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
             tval &= 0xffffffff;
         }
         gen_bnd_jmp(s);
-        gen_jmp(s, tval);
+        gen_jmp(s, tval, false);
         break;
     case 0xea: /* ljmp im */
         {
@@ -6716,7 +6724,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         if (dflag == MO_16) {
             tval &= 0xffff;
         }
-        gen_jmp(s, tval);
+        gen_jmp(s, tval, false);
         break;
     case 0x70 ... 0x7f: /* jcc Jb */
         tval = (int8_t)insn_get(env, s, MO_8);
@@ -7287,7 +7295,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         gen_helper_rdtsc(cpu_env);
         if (tb_cflags(s->base.tb) & CF_USE_ICOUNT) {
             gen_io_end();
-            gen_jmp(s, s->pc - s->cs_base);
+            gen_jmp(s, s->pc - s->cs_base, false);
         }
         break;
     case 0x133: /* rdpmc */
@@ -7746,7 +7754,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
             gen_helper_rdtscp(cpu_env);
             if (tb_cflags(s->base.tb) & CF_USE_ICOUNT) {
                 gen_io_end();
-                gen_jmp(s, s->pc - s->cs_base);
+                gen_jmp(s, s->pc - s->cs_base, false);
             }
             break;
 
@@ -8592,7 +8600,11 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
        record/replay modes and there will always be an
        additional step for ecx=0 when icount is enabled.
      */
+#ifdef ENABLE_BIG_TB
+    dc->repz_opt = false;
+#else
     dc->repz_opt = !dc->jmp_opt && !(tb_cflags(dc->base.tb) & CF_USE_ICOUNT);
+#endif
 #if 0
     /* check addseg logic */
     if (!dc->addseg && (dc->vm86 || !dc->pe || !dc->code32))

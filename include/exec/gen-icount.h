@@ -14,7 +14,9 @@ static inline void gen_tb_start(TranslationBlock *tb)
     fprintf(stderr, "TB start: %lx\n", (uintptr_t)tb);
 #endif
 
-    tcg_ctx->exitreq_label = gen_new_label();
+    if (!tcg_ctx->exitreq_label) {
+        tcg_ctx->exitreq_label = gen_new_label();
+    }
     if (tb_cflags(tb) & CF_USE_ICOUNT) {
         count = tcg_temp_local_new_i32();
     } else {
