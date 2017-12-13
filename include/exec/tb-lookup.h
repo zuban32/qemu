@@ -22,12 +22,12 @@ static inline bool check_pc(TranslationBlock *tb, target_ulong *pc)
 {
     target_ulong new_pc = tb->pc;
     bool check_pc = new_pc == *pc;
-#ifdef ENABLE_BIG_TB
-    for(int i = 0; i < tb->cur_free_entry && !check_pc; i++) {
-        new_pc = tb->mid_entries[i];
-        check_pc |= (new_pc == *pc);
-    }
-#endif
+//#ifdef ENABLE_BIG_TB
+//    for(int i = 0; i < tb->cur_free_entry && !check_pc; i++) {
+//        new_pc = tb->mid_entries[i];
+//        check_pc |= (new_pc == *pc);
+//    }
+//#endif
     return check_pc;
 }
 

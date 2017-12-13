@@ -2262,6 +2262,7 @@ static inline void gen_jcc(DisasContext *s, int b,
 #ifdef ENABLE_BIG_TB
         } else {
             gen_jcc1(s, b, l1);
+//            gen_tb_start(s->base.tb);
             s->cur_jumps--;
             s->jumps_to_resolve[s->cur_jump_to_resolve].pc = val;
             s->jumps_to_resolve[s->cur_jump_to_resolve++].l = l1;
@@ -2544,7 +2545,7 @@ static void gen_interrupt(DisasContext *s, int intno,
     gen_jmp_im(cur_eip);
     gen_helper_raise_interrupt(cpu_env, tcg_const_i32(intno),
                                tcg_const_i32(next_eip - cur_eip));
-    s->base.is_jmp = DISAS_NORETURN;
+//    s->base.is_jmp = DISAS_NORETURN;
 }
 
 static void gen_debug(DisasContext *s, target_ulong cur_eip)
@@ -2612,7 +2613,7 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
                 if (s->instr_gen_code[j].pc == s->jumps_to_resolve[i].pc) {
                     int label_start_idx = tcg_ctx->gen_next_op_idx;
                     gen_set_label(s->jumps_to_resolve[i].l);
-                    gen_tb_start(s->base.tb);
+//                    gen_tb_start(s->base.tb);
                     int label_idx = tcg_ctx->gen_next_op_idx - 1;
                     int target_idx = s->instr_gen_code[j].op_idx;
                     TCGOp *label_op = tcg_ctx->gen_op_buf + label_idx;
@@ -2640,8 +2641,8 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
 #ifdef DEBUG_BIG_TB
                 fprintf(stderr, "resolution failed - jump to the TB exit\n");
 #endif
-                gen_tb_start(s->base.tb);
                 gen_set_label(s->jumps_to_resolve[i].l);
+//                gen_tb_start(s->base.tb);
                 gen_jmp_im(s->jumps_to_resolve[i].pc);
                 tcg_gen_br(exit_l);
             }
@@ -2730,7 +2731,7 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num,
                 TCGOp *label_place = tcg_ctx->gen_op_buf + label_idx;
                 unsigned lbl_start = tcg_ctx->gen_next_op_idx;
                 gen_set_label(l);
-                gen_tb_start(s->base.tb);
+//                gen_tb_start(s->base.tb);
                 unsigned lbl_end = tcg_ctx->gen_next_op_idx - 1;
                 tcg_gen_br(l);
 
@@ -6549,6 +6550,9 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
             gen_io_end();
             gen_jmp(s, s->pc - s->cs_base, false);
         }
+        if (val == 0xb2) {
+            s->cur_jumps = 0;
+        }
         break;
     case 0xec:
     case 0xed:
@@ -7120,6 +7124,9 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
             gen_update_cc_op(s);
             gen_jmp_im(pc_start - s->cs_base);
             gen_helper_pause(cpu_env, tcg_const_i32(s->pc - pc_start));
+#ifdef ENABLE_BIG_TB
+            gen_eob(s);
+#endif
             s->base.is_jmp = DISAS_NORETURN;
         }
         break;
@@ -7133,6 +7140,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         break;
     case 0xcc: /* int3 */
         gen_interrupt(s, EXCP03_INT3, pc_start - s->cs_base, s->pc - s->cs_base);
+        gen_eob(s);
         break;
     case 0xcd: /* int N */
         val = x86_ldub_code(env, s);
@@ -7141,6 +7149,7 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         } else {
             gen_interrupt(s, val, pc_start - s->cs_base, s->pc - s->cs_base);
         }
+        gen_eob(s);
         break;
     case 0xce: /* into */
         if (CODE64(s))
