@@ -148,12 +148,12 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb,
     uint8_t *tb_ptr = itb->tc.ptr;
 
 #ifdef ENABLE_BIG_TB
-    for(int i = 0; i < itb->cur_free_entry; i++) {
-        if (pc_start == itb->mid_entries[i]) {
-            tb_ptr = itb->gen_mid_entries[i];
-            break;
-        }
-    }
+//    for(int i = 0; i < itb->cur_free_entry; i++) {
+//        if (pc_start == itb->mid_entries[i]) {
+//            tb_ptr = itb->gen_mid_entries[i];
+//            break;
+//        }
+//    }
 #endif
 
     qemu_log_mask_and_addr(CPU_LOG_EXEC, pc_start,
@@ -192,11 +192,17 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb,
                                TARGET_FMT_lx "] %s\n",
                                last_tb->tc.ptr, last_tb->pc,
                                lookup_symbol(last_tb->pc));
-        if (cc->synchronize_from_tb) {
-            cc->synchronize_from_tb(cpu, last_tb);
+        if(tb_exit != TB_EXIT_MID_REQUESTED) {
+            if (cc->synchronize_from_tb) {
+                cc->synchronize_from_tb(cpu, last_tb);
+            } else {
+                assert(cc->set_pc);
+                cc->set_pc(cpu, last_tb->pc);
+            }
         } else {
-            assert(cc->set_pc);
-            cc->set_pc(cpu, last_tb->pc);
+//            X86CPU *c = X86_CPU(cpu);
+//            cpu->env.eip = tb->pc - tb->cs_base;
+//            printf("next_pc = %lx\n", c->env.eip);
         }
     }
     return ret;
@@ -454,7 +460,7 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
             acquired_tb_lock = true;
         }
         if (!(tb->cflags & CF_INVALID)) {
-            tb_add_jump(last_tb, tb_exit, tb);
+//            tb_add_jump(last_tb, tb_exit, tb);
         }
     }
     if (acquired_tb_lock) {
@@ -648,7 +654,7 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
 #if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
     fprintf(stderr, "tb_exit = %d\n", *tb_exit);
 #endif
-    if (*tb_exit != TB_EXIT_REQUESTED) {
+    if (*tb_exit != TB_EXIT_REQUESTED && *tb_exit != TB_EXIT_MID_REQUESTED) {
         *last_tb = tb;
         return;
     }

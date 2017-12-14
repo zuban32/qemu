@@ -155,9 +155,12 @@ typedef struct DisasContext {
     jump_to_resolve jumps_to_resolve[MAX_INNER_JUMPS];
     int cur_jump_to_resolve;
     bool jumps_resolved;
+    bool met_exc;
+    bool met_br;
 #endif
 } DisasContext;
 
+static void do_resolve_jumps(DisasContext *s);
 static void gen_eob(DisasContext *s);
 static void gen_jr(DisasContext *s, TCGv dest);
 static void gen_jmp(DisasContext *s, target_ulong eip, bool break_tb);
@@ -1199,7 +1202,7 @@ static inline void gen_repz_ ## op(DisasContext *s, TCGMemOp ot,              \
        before rep string_insn */                                              \
     if (s->repz_opt)                                                          \
         gen_op_jz_ecx(s->aflag, l2);                                          \
-    gen_jmp(s, cur_eip, true);                                                      \
+    gen_jmp(s, cur_eip, false);                                                      \
 }
 
 #define GEN_REPZ2(op)                                                         \
@@ -1217,7 +1220,7 @@ static inline void gen_repz_ ## op(DisasContext *s, TCGMemOp ot,              \
     gen_jcc1(s, (JCC_Z << 1) | (nz ^ 1), l2);                                 \
     if (s->repz_opt)                                                          \
         gen_op_jz_ecx(s->aflag, l2);                                          \
-    gen_jmp(s, cur_eip, true);                                                      \
+    gen_jmp(s, cur_eip, false);                                                      \
 }
 
 GEN_REPZ(movs)
@@ -2271,6 +2274,7 @@ static inline void gen_jcc(DisasContext *s, int b,
 #endif
         }
 #endif
+        s->met_br = true;
     }
 }
 
@@ -2507,7 +2511,9 @@ static void gen_exception(DisasContext *s, int trapno, target_ulong cur_eip)
     gen_update_cc_op(s);
     gen_jmp_im(cur_eip);
     gen_helper_raise_exception(cpu_env, tcg_const_i32(trapno));
-//    s->base.is_jmp = DISAS_NORETURN;
+    s->met_exc = true;
+    gen_eob(s);
+    s->base.is_jmp = DISAS_NORETURN;
 }
 
 /* Generate #UD for the current instruction.  The assumption here is that
@@ -2545,7 +2551,9 @@ static void gen_interrupt(DisasContext *s, int intno,
     gen_jmp_im(cur_eip);
     gen_helper_raise_interrupt(cpu_env, tcg_const_i32(intno),
                                tcg_const_i32(next_eip - cur_eip));
-//    s->base.is_jmp = DISAS_NORETURN;
+    s->met_exc = true;
+    gen_eob(s);
+    s->base.is_jmp = DISAS_NORETURN;
 }
 
 static void gen_debug(DisasContext *s, target_ulong cur_eip)
@@ -2553,6 +2561,8 @@ static void gen_debug(DisasContext *s, target_ulong cur_eip)
     gen_update_cc_op(s);
     gen_jmp_im(cur_eip);
     gen_helper_debug(cpu_env);
+    s->met_exc = true;
+    gen_eob(s);
     s->base.is_jmp = DISAS_NORETURN;
 }
 
@@ -2593,12 +2603,7 @@ static void gen_bnd_jmp(DisasContext *s)
     }
 }
 
-/* Generate an end of block. Trace exception is also generated if needed.
-   If INHIBIT, set HF_INHIBIT_IRQ_MASK if it isn't already set.
-   If RECHECK_TF, emit a rechecking helper for #DB, ignoring the state of
-   S->TF.  This is used by the syscall/sysret insns.  */
-static void
-do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
+static void do_resolve_jumps(DisasContext *s)
 {
 #ifdef ENABLE_BIG_TB
     TCGLabel *exit_l = gen_new_label();
@@ -2641,8 +2646,8 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
 #ifdef DEBUG_BIG_TB
                 fprintf(stderr, "resolution failed - jump to the TB exit\n");
 #endif
-                gen_set_label(s->jumps_to_resolve[i].l);
 //                gen_tb_start(s->base.tb);
+                gen_set_label(s->jumps_to_resolve[i].l);
                 gen_jmp_im(s->jumps_to_resolve[i].pc);
                 tcg_gen_br(exit_l);
             }
@@ -2651,6 +2656,21 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
     }
     gen_set_label(exit_l);
 #endif
+}
+
+/* Generate an end of block. Trace exception is also generated if needed.
+   If INHIBIT, set HF_INHIBIT_IRQ_MASK if it isn't already set.
+   If RECHECK_TF, emit a rechecking helper for #DB, ignoring the state of
+   S->TF.  This is used by the syscall/sysret insns.  */
+static void
+do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
+{
+    TCGLabel *exit = NULL;
+    if(s->met_exc) {
+        exit = gen_new_label();
+        tcg_gen_br(exit);
+    }
+    do_resolve_jumps(s);
     gen_update_cc_op(s);
 
     /* If several instructions disable interrupts, only the first does it.  */
@@ -2676,6 +2696,8 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
         tcg_gen_exit_tb(0);
     }
     s->base.is_jmp = DISAS_NORETURN;
+    if(exit)
+        gen_set_label(exit);
 }
 
 static inline void
@@ -2708,6 +2730,7 @@ static void gen_jr(DisasContext *s, TCGv dest)
 static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num,
         bool break_tb)
 {
+    s->met_br = true;
     gen_update_cc_op(s);
     set_cc_op(s, CC_OP_DYNAMIC);
     if (s->jmp_opt) {
@@ -2731,7 +2754,6 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num,
                 TCGOp *label_place = tcg_ctx->gen_op_buf + label_idx;
                 unsigned lbl_start = tcg_ctx->gen_next_op_idx;
                 gen_set_label(l);
-//                gen_tb_start(s->base.tb);
                 unsigned lbl_end = tcg_ctx->gen_next_op_idx - 1;
                 tcg_gen_br(l);
 
@@ -7125,6 +7147,8 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
             gen_jmp_im(pc_start - s->cs_base);
             gen_helper_pause(cpu_env, tcg_const_i32(s->pc - pc_start));
 #ifdef ENABLE_BIG_TB
+//            do_resolve_jumps(s);
+            s->met_exc = true;
             gen_eob(s);
 #endif
             s->base.is_jmp = DISAS_NORETURN;
@@ -7140,7 +7164,6 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         break;
     case 0xcc: /* int3 */
         gen_interrupt(s, EXCP03_INT3, pc_start - s->cs_base, s->pc - s->cs_base);
-        gen_eob(s);
         break;
     case 0xcd: /* int N */
         val = x86_ldub_code(env, s);
@@ -7149,7 +7172,6 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         } else {
             gen_interrupt(s, val, pc_start - s->cs_base, s->pc - s->cs_base);
         }
-        gen_eob(s);
         break;
     case 0xce: /* into */
         if (CODE64(s))
@@ -7374,6 +7396,10 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
             gen_update_cc_op(s);
             gen_jmp_im(pc_start - s->cs_base);
             gen_helper_hlt(cpu_env, tcg_const_i32(s->pc - pc_start));
+#ifdef ENABLE_BIG_TB
+            s->met_exc = true;
+            gen_eob(s);
+#endif
             s->base.is_jmp = DISAS_NORETURN;
         }
         break;
@@ -8638,6 +8664,8 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
     dc->cur_instr_code = 0;
     dc->cur_jump_to_resolve = 0;
     dc->jumps_resolved = false;
+    dc->met_exc = false;
+    dc->met_br = false;
 #endif
 
     return max_insns;
@@ -8650,6 +8678,16 @@ static void i386_tr_tb_start(DisasContextBase *db, CPUState *cpu)
 static void i386_tr_insn_start(DisasContextBase *dcbase, CPUState *cpu)
 {
     DisasContext *dc = container_of(dcbase, DisasContext, base);
+#ifdef ENABLE_BIG_TB
+    if(dc->met_br) {
+        gen_update_cc_op(dc);
+        gen_jmp_im(dcbase->pc_next - dc->cs_base);
+        gen_tb_mid(dcbase->tb);
+        dc->met_br = false;
+    }
+    dc->instr_gen_code[dc->cur_instr_code].op_idx = tcg_ctx->gen_next_op_idx;
+    dc->instr_gen_code[dc->cur_instr_code++].pc = dcbase->pc_next;
+#endif
 
     tcg_gen_insn_start(dc->base.pc_next, dc->cc_op);
 }
@@ -8677,10 +8715,6 @@ static bool i386_tr_breakpoint_check(DisasContextBase *dcbase, CPUState *cpu,
 static void i386_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
 {
     DisasContext *dc = container_of(dcbase, DisasContext, base);
-#ifdef ENABLE_BIG_TB
-    dc->instr_gen_code[dc->cur_instr_code].op_idx = tcg_ctx->gen_next_op_idx;
-    dc->instr_gen_code[dc->cur_instr_code++].pc = dcbase->pc_next;
-#endif
 
     target_ulong pc_next = disas_insn(dc, cpu);
 
@@ -8716,6 +8750,7 @@ static void i386_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
 
     if (dc->base.is_jmp == DISAS_TOO_MANY) {
         gen_jmp_im(dc->base.pc_next - dc->cs_base);
+//        dc->met_exc = true;
         gen_eob(dc);
     }
 }

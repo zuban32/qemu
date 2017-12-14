@@ -4070,13 +4070,14 @@ static void x86_cpu_set_pc(CPUState *cs, vaddr value)
     X86CPU *cpu = X86_CPU(cs);
 
     cpu->env.eip = value;
+//    printf("sync pc: %lx\n", cpu->env.eip);
 }
 
 static void x86_cpu_synchronize_from_tb(CPUState *cs, TranslationBlock *tb)
 {
     X86CPU *cpu = X86_CPU(cs);
-
     cpu->env.eip = tb->pc - tb->cs_base;
+//    printf("sync pc: %lx\n", cpu->env.eip);
 }
 
 static bool x86_cpu_has_work(CPUState *cs)

@@ -749,6 +749,7 @@ TranslationBlock *tcg_tb_alloc(TCGContext *s)
     TranslationBlock *tb;
     void *next;
     s->exitreq_label = NULL;
+    s->exitreqmid_label = NULL;
 
  retry:
     tb = (void *)ROUND_UP((uintptr_t)s->code_gen_ptr, align);
