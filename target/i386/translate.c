@@ -2694,13 +2694,13 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
         exit = gen_new_label();
         tcg_gen_br(exit);
     }
+    gen_update_cc_op(s);
     CCOp tmp1 = s->cc_op;
     bool tmp2 = s->cc_op_dirty;
     do_resolve_jumps(s);
     s->cc_op = tmp1;
     s->cc_op_dirty = tmp2;
 //#if !defined(ENABLE_BIG_TB) || !defined(MAX_INNER_JUMPS) || !MAX_INNER_JUMPS
-    gen_update_cc_op(s);
 //#endif
 
     /* If several instructions disable interrupts, only the first does it.  */
