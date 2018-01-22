@@ -162,7 +162,9 @@ typedef struct DisasContext {
 #endif
 } DisasContext;
 
+#ifdef ENABLE_BIG_TB
 static void do_resolve_jumps(DisasContext *s);
+#endif
 static void gen_eob(DisasContext *s);
 static void gen_jr(DisasContext *s, TCGv dest);
 static void gen_jmp(DisasContext *s, target_ulong eip, bool break_tb);
@@ -2642,9 +2644,9 @@ static void gen_bnd_jmp(DisasContext *s)
     }
 }
 
+#ifdef ENABLE_BIG_TB
 static void do_resolve_jumps(DisasContext *s)
 {
-#ifdef ENABLE_BIG_TB
     TCGLabel *exit_l = gen_new_label();
     tcg_gen_br(exit_l);
     if(!s->jumps_resolved) {
@@ -2704,8 +2706,8 @@ static void do_resolve_jumps(DisasContext *s)
         s->jumps_resolved = true;
     }
     gen_set_label(exit_l);
-#endif
 }
+#endif
 
 /* Generate an end of block. Trace exception is also generated if needed.
    If INHIBIT, set HF_INHIBIT_IRQ_MASK if it isn't already set.
@@ -2722,12 +2724,13 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
     }
 #endif
     gen_update_cc_op(s);
+#ifdef ENABLE_BIG_TB
     CCOp tmp1 = s->cc_op;
     bool tmp2 = s->cc_op_dirty;
-    if (0)
     do_resolve_jumps(s);
     s->cc_op = tmp1;
     s->cc_op_dirty = tmp2;
+#endif
 
     /* If several instructions disable interrupts, only the first does it.  */
     if (inhibit && !(s->flags & HF_INHIBIT_IRQ_MASK)) {
@@ -6943,14 +6946,14 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
         break;
     case 0xf9: /* stc */
         // already incremented pc
-        if (s->pc != 0x362d2 ){// && s->pc != 0x3628f) {
+//        if (s->pc != 0x362d2 ){// && s->pc != 0x3628f) {
             gen_compute_eflags(s);
             tcg_gen_ori_tl(cpu_cc_src, cpu_cc_src, CC_C);
-        } else {
+//        } else {
 //            gen_compute_eflags(s);
 //            tcg_gen_ori_tl(cpu_cc_src, cpu_cc_src, CC_C);
-            fprintf(stderr, "skip stc at 0x362d1\n");
-        }
+//            fprintf(stderr, "skip stc at 0x362d1\n");
+//        }
         break;
     case 0xfc: /* cld */
         tcg_gen_movi_i32(cpu_tmp2_i32, 1);

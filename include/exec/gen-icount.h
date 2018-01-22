@@ -93,16 +93,16 @@ static inline void gen_tb_end(TranslationBlock *tb, int num_insns)
         /* Update the num_insn immediate parameter now that we know
          * the actual insn count.  */
         tcg_set_insn_param(icount_start_insn_idx[0], 1, num_insns);
-        if(tcg_ctx->exitreqmid_label)
-        tcg_set_insn_param(icount_start_insn_idx[1], 1, num_insns);
+//        if(tcg_ctx->exitreqmid_label)
+//        tcg_set_insn_param(icount_start_insn_idx[1], 1, num_insns);
     }
 
-    if(tcg_ctx->exitreqmid_label) {
-        gen_set_label(tcg_ctx->exitreqmid_label);
-        tcg_gen_exit_tb((uintptr_t)tb + TB_EXIT_MID_REQUESTED);
-    }
-
-    gen_set_label(tcg_ctx->exitreq_label);
+//    if(tcg_ctx->exitreqmid_label) {
+//        gen_set_label(tcg_ctx->exitreqmid_label);
+//        tcg_gen_exit_tb((uintptr_t)tb + TB_EXIT_MID_REQUESTED);
+//    }
+//
+//    gen_set_label(tcg_ctx->exitreq_label);
     tcg_gen_exit_tb((uintptr_t)tb + TB_EXIT_REQUESTED);
 
     /* Terminate the linked list.  */
