@@ -150,8 +150,8 @@ typedef struct DisasContext {
     int cpuid_7_0_ebx_features;
     int cpuid_xsave_features;
     sigjmp_buf jmpbuf;
-#ifdef ENABLE_BIG_TB
     int cur_jumps;
+#ifdef ENABLE_BIG_TB
     instr_gen_place instr_gen_code[1024];
     int cur_instr_code;
     jump_to_resolve jumps_to_resolve[MAX_INNER_JUMPS];
@@ -2547,7 +2547,7 @@ static void gen_exception(DisasContext *s, int trapno, target_ulong cur_eip)
 #ifdef ENABLE_BIG_TB
     s->met_exc = true;
 #endif
-    gen_eob(s);
+//    gen_eob(s);
     s->base.is_jmp = DISAS_NORETURN;
 }
 
@@ -2589,7 +2589,7 @@ static void gen_interrupt(DisasContext *s, int intno,
 #ifdef ENABLE_BIG_TB
     s->met_exc = true;
 #endif
-    gen_eob(s);
+//    gen_eob(s);
     s->base.is_jmp = DISAS_NORETURN;
 }
 
@@ -2601,7 +2601,7 @@ static void gen_debug(DisasContext *s, target_ulong cur_eip)
 #ifdef ENABLE_BIG_TB
     s->met_exc = true;
 #endif
-    gen_eob(s);
+//    gen_eob(s);
     s->base.is_jmp = DISAS_NORETURN;
 }
 
@@ -2724,7 +2724,7 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
     gen_update_cc_op(s);
     CCOp tmp1 = s->cc_op;
     bool tmp2 = s->cc_op_dirty;
-//    if (0)
+    if (0)
     do_resolve_jumps(s);
     s->cc_op = tmp1;
     s->cc_op_dirty = tmp2;
@@ -8687,7 +8687,7 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
 #endif
     dc->flags = flags;
 #ifdef ENABLE_BIG_TB
-    dc->jmp_opt = true;
+    dc->jmp_opt = false;
 #else
     dc->jmp_opt = !(dc->tf || dc->base.singlestep_enabled ||
                     (flags & HF_INHIBIT_IRQ_MASK));
@@ -8702,11 +8702,7 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
        record/replay modes and there will always be an
        additional step for ecx=0 when icount is enabled.
      */
-#ifdef ENABLE_BIG_TB
-    dc->repz_opt = true;
-#else
     dc->repz_opt = !dc->jmp_opt && !(tb_cflags(dc->base.tb) & CF_USE_ICOUNT);
-#endif
 #if 0
     /* check addseg logic */
     if (!dc->addseg && (dc->vm86 || !dc->pe || !dc->code32))
@@ -8726,8 +8722,8 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
     cpu_ptr1 = tcg_temp_new_ptr();
     cpu_cc_srcT = tcg_temp_local_new();
 
-#ifdef ENABLE_BIG_TB
     dc->cur_jumps = MAX_INNER_JUMPS;
+#ifdef ENABLE_BIG_TB
     dc->cur_instr_code = 0;
     dc->cur_jump_to_resolve = 0;
     dc->jumps_resolved = false;
@@ -8746,12 +8742,12 @@ static void i386_tr_insn_start(DisasContextBase *dcbase, CPUState *cpu)
 {
     DisasContext *dc = container_of(dcbase, DisasContext, base);
 #ifdef ENABLE_BIG_TB
-    if(dc->met_br) {
-        gen_update_cc_op(dc);
-        gen_jmp_im(dcbase->pc_next - dc->cs_base);
-        gen_tb_mid(dcbase->tb);
-        dc->met_br = false;
-    }
+//    if(dc->met_br) {
+//        gen_update_cc_op(dc);
+//        gen_jmp_im(dcbase->pc_next - dc->cs_base);
+//        gen_tb_mid(dcbase->tb);
+//        dc->met_br = false;
+//    }
     dc->instr_gen_code[dc->cur_instr_code].op_idx = tcg_ctx->gen_next_op_idx;
     dc->instr_gen_code[dc->cur_instr_code++].pc = dcbase->pc_next;
 #endif

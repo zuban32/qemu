@@ -444,7 +444,7 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
 //        fprintf(stderr, "Found\n");
 //#endif
 #endif
-//    }
+    }
 #ifndef CONFIG_USER_ONLY
     /* We don't take care of direct jumps when address mapping changes in
      * system emulation. So it's not safe to make a direct jump to a TB

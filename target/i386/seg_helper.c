@@ -619,7 +619,6 @@ static void do_interrupt_protected(CPUX86State *env, int intno, int is_int,
 
     dt = &env->idt;
     if (intno * 8 + 7 > dt->limit) {
-        fprintf(stderr, "Limit overflow\n");
         raise_exception_err(env, EXCP0D_GPF, intno * 8 + 2);
     }
     ptr = dt->base + intno * 8;
@@ -631,7 +630,6 @@ static void do_interrupt_protected(CPUX86State *env, int intno, int is_int,
     case 5: /* task gate */
         /* must do that check here to return the correct error code */
         if (!(e2 & DESC_P_MASK)) {
-            fprintf(stderr, "NOSEG\n");
             raise_exception_err(env, EXCP0B_NOSEG, intno * 8 + 2);
         }
         switch_tss(env, intno * 8, e1, e2, SWITCH_TSS_CALL, old_eip);
@@ -663,7 +661,6 @@ static void do_interrupt_protected(CPUX86State *env, int intno, int is_int,
     case 15: /* 386 trap gate */
         break;
     default:
-        fprintf(stderr, "illegal gate\n");
         raise_exception_err(env, EXCP0D_GPF, intno * 8 + 2);
         break;
     }
@@ -671,35 +668,28 @@ static void do_interrupt_protected(CPUX86State *env, int intno, int is_int,
     cpl = env->hflags & HF_CPL_MASK;
     /* check privilege if software int */
     if (is_int && dpl < cpl) {
-        fprintf(stderr, "wrong cpl\n");
         raise_exception_err(env, EXCP0D_GPF, intno * 8 + 2);
     }
     /* check valid bit */
     if (!(e2 & DESC_P_MASK)) {
-        fprintf(stderr, "!valid\n");
         raise_exception_err(env, EXCP0B_NOSEG, intno * 8 + 2);
     }
     selector = e1 >> 16;
     offset = (e2 & 0xffff0000) | (e1 & 0x0000ffff);
     if ((selector & 0xfffc) == 0) {
-        fprintf(stderr, "illegal selector\n");
         raise_exception_err(env, EXCP0D_GPF, 0);
     }
     if (load_segment(env, &e1, &e2, selector) != 0) {
-        fprintf(stderr, "illegal segment\n");
         raise_exception_err(env, EXCP0D_GPF, selector & 0xfffc);
     }
     if (!(e2 & DESC_S_MASK) || !(e2 & (DESC_CS_MASK))) {
-        fprintf(stderr, "illegal mask\n");
         raise_exception_err(env, EXCP0D_GPF, selector & 0xfffc);
     }
     dpl = (e2 >> DESC_DPL_SHIFT) & 3;
     if (dpl > cpl) {
-        fprintf(stderr, "illegal cpl1\n");
         raise_exception_err(env, EXCP0D_GPF, selector & 0xfffc);
     }
     if (!(e2 & DESC_P_MASK)) {
-        fprintf(stderr, "mask error\n");
         raise_exception_err(env, EXCP0B_NOSEG, selector & 0xfffc);
     }
     if (e2 & DESC_C_MASK) {
@@ -709,30 +699,24 @@ static void do_interrupt_protected(CPUX86State *env, int intno, int is_int,
         /* to inner privilege */
         get_ss_esp_from_tss(env, &ss, &esp, dpl, 0);
         if ((ss & 0xfffc) == 0) {
-            fprintf(stderr, "ss tss\n");
             raise_exception_err(env, EXCP0A_TSS, ss & 0xfffc);
         }
         if ((ss & 3) != dpl) {
-            fprintf(stderr, "ss1 tss\n");
             raise_exception_err(env, EXCP0A_TSS, ss & 0xfffc);
         }
         if (load_segment(env, &ss_e1, &ss_e2, ss) != 0) {
-            fprintf(stderr, "seg tss\n");
             raise_exception_err(env, EXCP0A_TSS, ss & 0xfffc);
         }
         ss_dpl = (ss_e2 >> DESC_DPL_SHIFT) & 3;
         if (ss_dpl != dpl) {
-            fprintf(stderr, "dpl tss\n");
             raise_exception_err(env, EXCP0A_TSS, ss & 0xfffc);
         }
         if (!(ss_e2 & DESC_S_MASK) ||
             (ss_e2 & DESC_CS_MASK) ||
             !(ss_e2 & DESC_W_MASK)) {
-            fprintf(stderr, "masks tss\n");
             raise_exception_err(env, EXCP0A_TSS, ss & 0xfffc);
         }
         if (!(ss_e2 & DESC_P_MASK)) {
-            fprintf(stderr, "mask tss\n");
             raise_exception_err(env, EXCP0A_TSS, ss & 0xfffc);
         }
         new_stack = 1;
@@ -741,7 +725,6 @@ static void do_interrupt_protected(CPUX86State *env, int intno, int is_int,
     } else  {
         /* to same privilege */
         if (vm86) {
-            fprintf(stderr, "vm86 tss\n");
             raise_exception_err(env, EXCP0D_GPF, selector & 0xfffc);
         }
         new_stack = 0;
@@ -1113,7 +1096,6 @@ static void do_interrupt_real(CPUX86State *env, int intno, int is_int,
     /* real mode (simpler!) */
     dt = &env->idt;
     if (intno * 4 + 3 > dt->limit) {
-        fprintf(stderr, "real\n");
         raise_exception_err(env, EXCP0D_GPF, intno * 8 + 2);
     }
     ptr = dt->base + intno * 4;
