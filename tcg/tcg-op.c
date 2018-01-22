@@ -2549,7 +2549,7 @@ void tcg_gen_extr32_i64(TCGv_i64 lo, TCGv_i64 hi, TCGv_i64 arg)
 void tcg_gen_goto_tb(unsigned idx)
 {
     /* We only support two chained exits.  */
-    tcg_debug_assert(idx <= 1);
+//    tcg_debug_assert(idx <= 1);
 #ifdef CONFIG_DEBUG_TCG
     /* Verify that we havn't seen this numbered exit before.  */
     tcg_debug_assert((tcg_ctx->goto_tb_issue_mask & (1 << idx)) == 0);

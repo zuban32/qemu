@@ -180,8 +180,9 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb,
     last_tb = (TranslationBlock *)(ret & ~TB_EXIT_MASK);
     tb_exit = ret & TB_EXIT_MASK;
     trace_exec_tb_exit(last_tb, tb_exit);
+//    fprintf(stderr, "TB %lx: ret = %lx, tb_exit = %x\n", itb->pc, ret, tb_exit);
 
-    if (tb_exit > TB_EXIT_IDX1) {
+    if (tb_exit > TB_EXIT_IDXMAX) {
         /* We didn't start executing this TB (eg because the instruction
          * counter hit zero); we must restore the guest PC to the address
          * of the start of the TB.
@@ -432,18 +433,18 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
 //#endif
         atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(pc)], tb);
 #ifdef ENABLE_BIG_TB
-        for(int i = 0; i < tb->cur_free_entry; i++) {
+//        for(int i = 0; i < tb->cur_free_entry; i++) {
 //#ifdef DEBUG_BIG_TB
 //            fprintf(stderr, "Adding tb [%lx] to the cache\n", tb->mid_entries[i]);
 //#endif
 //            atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(tb->mid_entries[i])], tb);
-        }
-    } else {
+//        }
+    } //else {
 //#ifdef DEBUG_BIG_TB
 //        fprintf(stderr, "Found\n");
 //#endif
 #endif
-    }
+//    }
 #ifndef CONFIG_USER_ONLY
     /* We don't take care of direct jumps when address mapping changes in
      * system emulation. So it's not safe to make a direct jump to a TB
@@ -460,7 +461,7 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
             acquired_tb_lock = true;
         }
         if (!(tb->cflags & CF_INVALID)) {
-//            tb_add_jump(last_tb, tb_exit, tb);
+            tb_add_jump(last_tb, tb_exit, tb);
         }
     }
     if (acquired_tb_lock) {

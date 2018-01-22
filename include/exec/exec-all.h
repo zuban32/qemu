@@ -322,7 +322,7 @@ struct tb_tc {
 struct TranslationBlock {
     target_ulong pc;   /* simulated PC corresponding to this block (EIP + CS base) */
 #ifdef ENABLE_BIG_TB
-#define MAX_INNER_JUMPS 2
+#define MAX_INNER_JUMPS 1
     target_ulong mid_entries[MAX_INNER_JUMPS];
     uint8_t *gen_mid_entries[MAX_INNER_JUMPS];
     unsigned instr_num_mid_entries[MAX_INNER_JUMPS];
@@ -364,9 +364,9 @@ struct TranslationBlock {
      * setting one of the jump targets (or patching the jump instruction). Only
      * two of such jumps are supported.
      */
-    uint16_t jmp_reset_offset[2]; /* offset of original jump target */
+    uint16_t jmp_reset_offset[2*(1+MAX_INNER_JUMPS)]; /* offset of original jump target */
 #define TB_JMP_RESET_OFFSET_INVALID 0xffff /* indicates no jump generated */
-    uintptr_t jmp_target_arg[2];  /* target address or offset */
+    uintptr_t jmp_target_arg[2*(1+MAX_INNER_JUMPS)];  /* target address or offset */
 
     /* Each TB has an associated circular list of TBs jumping to this one.
      * jmp_list_first points to the first TB jumping to this one.
@@ -380,7 +380,7 @@ struct TranslationBlock {
      * In other words, 0/1 tells which jump is used in the pointed TB,
      * and 2 means that this is a pointer back to the target TB of this list.
      */
-    uintptr_t jmp_list_next[2];
+    uintptr_t jmp_list_next[2*(1+MAX_INNER_JUMPS)];
     uintptr_t jmp_list_first;
 };
 

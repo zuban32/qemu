@@ -276,29 +276,26 @@ static void set_cc_op(DisasContext *s, CCOp op)
         /* The DYNAMIC setting is translator only, and should never be
            stored.  Thus we always consider it clean.  */
         s->cc_op_dirty = false;
-        fprintf(stderr, "cc_op_dirty at %lx: %d -> %d\n", s->pc, s->cc_op_dirty, false);
+//        fprintf(stderr, "cc_op_dirty at %lx: %d -> %d\n", s->pc, s->cc_op_dirty, false);
     } else {
         /* Discard any computed CC_OP value (see shifts).  */
         if (s->cc_op == CC_OP_DYNAMIC) {
             tcg_gen_discard_i32(cpu_cc_op);
         }
-        fprintf(stderr, "cc_op_dirty at %lx: %d -> %d\n", s->pc, s->cc_op_dirty, true);
-        if (s->pc != 0x362d2) {
+//        fprintf(stderr, "cc_op_dirty at %lx: %d -> %d\n", s->pc, s->cc_op_dirty, true);
+//        if (s->pc != 0x362d2) {
         s->cc_op_dirty = true;
-        }
+//        }
     }
-    fprintf(stderr, "at [%lx]: cc_op: %x -> %x\n", s->pc, s->cc_op, op);
+//    fprintf(stderr, "at [%lx]: cc_op: %x -> %x\n", s->pc, s->cc_op, op);
     s->cc_op = op;
 }
 
 static void gen_update_cc_op(DisasContext *s)
 {
-    if (s->pc == 0x3a764) {
-        fprintf(stderr, "s->cc here: %d, %x\n", s->cc_op_dirty, s->cc_op);
-    }
     if (s->cc_op_dirty) {
         tcg_gen_movi_i32(cpu_cc_op, s->cc_op);
-        fprintf(stderr, "cc_op_dirty at %lx: %d -> %d\n", s->pc, s->cc_op_dirty, false);
+//        fprintf(stderr, "cc_op_dirty at %lx: %d -> %d\n", s->pc, s->cc_op_dirty, false);
         s->cc_op_dirty = false;
     }
 }
@@ -2236,7 +2233,7 @@ static inline void gen_goto_tb(DisasContext *s, int tb_num, target_ulong eip)
         tcg_gen_goto_tb(tb_num);
         gen_jmp_im(eip);
         tcg_gen_exit_tb((uintptr_t)s->base.tb + tb_num);
-        s->base.is_jmp = DISAS_NORETURN;
+//        s->base.is_jmp = DISAS_NORETURN;
     } else {
         /* jump to another page */
         gen_jmp_im(eip);
@@ -2251,12 +2248,33 @@ static inline void gen_jcc(DisasContext *s, int b,
 
     if (s->jmp_opt) {
         l1 = gen_new_label();
+//#ifdef ENABLE_BIG_TB
+//        if (s->cur_jumps <= 0) {
+//#endif
         gen_jcc1(s, b, l1);
+        int exit = (MAX_INNER_JUMPS-s->cur_jumps)*2;
+//        if (exit > 1) {
+//            exit += 3;
+//        }
 
-        gen_goto_tb(s, 0, next_eip);
+        gen_goto_tb(s, exit+0, next_eip);
 
         gen_set_label(l1);
-        gen_goto_tb(s, 1, val);
+        gen_goto_tb(s, exit+1, val);
+        if (!s->cur_jumps) {
+            s->base.is_jmp = DISAS_NORETURN;
+        }
+        s->cur_jumps--;
+//#ifdef ENABLE_BIG_TB
+//        } else {
+//            s->jumps_to_resolve[s->cur_jump_to_resolve].cc_op_dirty = s->cc_op_dirty;
+//            s->jumps_to_resolve[s->cur_jump_to_resolve].cc_op = s->cc_op;
+//            gen_jcc1(s, b, l1);
+//            s->cur_jumps--;
+//            s->jumps_to_resolve[s->cur_jump_to_resolve].pc = val;
+//            s->jumps_to_resolve[s->cur_jump_to_resolve++].l = l1;
+//        }
+//#endif
     } else {
         l1 = gen_new_label();
 #ifdef ENABLE_BIG_TB
@@ -2275,7 +2293,6 @@ static inline void gen_jcc(DisasContext *s, int b,
             gen_eob(s);
 #ifdef ENABLE_BIG_TB
         } else {
-            fprintf(stderr, "Jcc at %lx: cc = (%d, %x)\n", s->pc, s->cc_op_dirty, s->cc_op);
             s->jumps_to_resolve[s->cur_jump_to_resolve].cc_op_dirty = s->cc_op_dirty;
             s->jumps_to_resolve[s->cur_jump_to_resolve].cc_op = s->cc_op;
             gen_jcc1(s, b, l1);
@@ -2287,9 +2304,11 @@ static inline void gen_jcc(DisasContext *s, int b,
             fprintf(stderr, "Adding jcc at %lx(-1 instr) to %lx for resolution\n", s->pc, val);
 #endif
         }
-        s->met_br = true;
 #endif
     }
+#ifdef ENABLE_BIG_TB
+    s->met_br = true;
+#endif
 }
 
 static void gen_cmovcc1(CPUX86State *env, DisasContext *s, TCGMemOp ot, int b,
@@ -2525,7 +2544,9 @@ static void gen_exception(DisasContext *s, int trapno, target_ulong cur_eip)
     gen_update_cc_op(s);
     gen_jmp_im(cur_eip);
     gen_helper_raise_exception(cpu_env, tcg_const_i32(trapno));
+#ifdef ENABLE_BIG_TB
     s->met_exc = true;
+#endif
     gen_eob(s);
     s->base.is_jmp = DISAS_NORETURN;
 }
@@ -2565,7 +2586,9 @@ static void gen_interrupt(DisasContext *s, int intno,
     gen_jmp_im(cur_eip);
     gen_helper_raise_interrupt(cpu_env, tcg_const_i32(intno),
                                tcg_const_i32(next_eip - cur_eip));
+#ifdef ENABLE_BIG_TB
     s->met_exc = true;
+#endif
     gen_eob(s);
     s->base.is_jmp = DISAS_NORETURN;
 }
@@ -2575,7 +2598,9 @@ static void gen_debug(DisasContext *s, target_ulong cur_eip)
     gen_update_cc_op(s);
     gen_jmp_im(cur_eip);
     gen_helper_debug(cpu_env);
+#ifdef ENABLE_BIG_TB
     s->met_exc = true;
+#endif
     gen_eob(s);
     s->base.is_jmp = DISAS_NORETURN;
 }
@@ -2690,18 +2715,19 @@ static void
 do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
 {
     TCGLabel *exit = NULL;
+#ifdef ENABLE_BIG_TB
     if(s->met_exc) {
         exit = gen_new_label();
         tcg_gen_br(exit);
     }
+#endif
     gen_update_cc_op(s);
     CCOp tmp1 = s->cc_op;
     bool tmp2 = s->cc_op_dirty;
+//    if (0)
     do_resolve_jumps(s);
     s->cc_op = tmp1;
     s->cc_op_dirty = tmp2;
-//#if !defined(ENABLE_BIG_TB) || !defined(MAX_INNER_JUMPS) || !MAX_INNER_JUMPS
-//#endif
 
     /* If several instructions disable interrupts, only the first does it.  */
     if (inhibit && !(s->flags & HF_INHIBIT_IRQ_MASK)) {
@@ -2760,7 +2786,9 @@ static void gen_jr(DisasContext *s, TCGv dest)
 static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num,
         bool break_tb)
 {
+#ifdef ENABLE_BIG_TB
     s->met_br = true;
+#endif
     gen_update_cc_op(s);
     set_cc_op(s, CC_OP_DYNAMIC);
     if (s->jmp_opt) {
@@ -6602,9 +6630,11 @@ static target_ulong disas_insn(DisasContext *s, CPUState *cpu)
             gen_io_end();
             gen_jmp(s, s->pc - s->cs_base, false);
         }
+#ifdef ENABLE_BIG_TB
         if (val == 0xb2) {
             s->cur_jumps = 0;
         }
+#endif
         break;
     case 0xec:
     case 0xed:
@@ -8657,7 +8687,7 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
 #endif
     dc->flags = flags;
 #ifdef ENABLE_BIG_TB
-    dc->jmp_opt = false;
+    dc->jmp_opt = true;
 #else
     dc->jmp_opt = !(dc->tf || dc->base.singlestep_enabled ||
                     (flags & HF_INHIBIT_IRQ_MASK));
@@ -8673,7 +8703,7 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
        additional step for ecx=0 when icount is enabled.
      */
 #ifdef ENABLE_BIG_TB
-    dc->repz_opt = false;
+    dc->repz_opt = true;
 #else
     dc->repz_opt = !dc->jmp_opt && !(tb_cflags(dc->base.tb) & CF_USE_ICOUNT);
 #endif

@@ -161,7 +161,7 @@ int cpu_get_pic_interrupt(CPUX86State *env)
 {
     X86CPU *cpu = x86_env_get_cpu(env);
     int intno;
-    fprintf(stderr, "PIC int\n");
+//    fprintf(stderr, "PIC int\n");
 
     if (!kvm_irqchip_in_kernel()) {
         intno = apic_get_interrupt(cpu->apic_state);
@@ -175,7 +175,7 @@ int cpu_get_pic_interrupt(CPUX86State *env)
     }
 
     intno = pic_read_irq(isa_pic);
-    fprintf(stderr, "%d\n", intno);
+//    fprintf(stderr, "%d\n", intno);
     return intno;
 }
 
