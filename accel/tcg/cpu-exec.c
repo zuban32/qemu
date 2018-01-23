@@ -393,7 +393,6 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
 
     tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &flags, cf_mask);
 #ifdef ENABLE_BIG_TB
-    *actual_pc = pc;
 //#ifdef DEBUG_BIG_TB
 //    fprintf(stderr, "Looking for the TB at %lx...\n", pc);
 //#endif

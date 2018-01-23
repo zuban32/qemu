@@ -2796,7 +2796,7 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num,
     set_cc_op(s, CC_OP_DYNAMIC);
     if (s->jmp_opt) {
         gen_goto_tb(s, tb_num, eip);
-    } else if (!break_tb) {
+//    } else if (!break_tb) {
 #ifdef ENABLE_BIG_TB
         bool back_arc = is_backarc(s, eip);
 
@@ -2847,7 +2847,7 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num,
 #else
         gen_jmp_im(eip);
 #endif
-        gen_eob(s);
+//        gen_eob(s);
     } else {
         gen_jmp_im(eip);
         gen_eob(s);
