@@ -1049,9 +1049,9 @@ static inline void tb_jmp_unlink(TranslationBlock *tb)
     ptb = &tb->jmp_list_first;
     for (;;) {
         ntb = *ptb;
-        n1 = ntb & 3;
-        tb1 = (TranslationBlock *)(ntb & ~3);
-        if (n1 == 2) {
+        n1 = ntb & TB_EXIT_MASK;
+        tb1 = (TranslationBlock *)(ntb & ~TB_EXIT_MASK);
+        if (n1 == TB_EXIT_IDXMAX) {
             break;
         }
         tb_reset_jump(tb1, n1);
@@ -1083,17 +1083,19 @@ void tb_phys_invalidate(TranslationBlock *tb, tb_page_addr_t page_addr)
         return;
     }
 
+     for(int i = 0; i < 2*(MAX_INNER_JUMPS+1); i++) {
+         if (tb->page_addr[i] != -1 && tb->page_addr[i] != page_addr) {
+             p = page_find(tb->page_addr[i] >> TARGET_PAGE_BITS);
+             tb_page_remove(&p->first_tb, tb);
+             invalidate_page_bitmap(p);
+         }
+     }
     /* remove the TB from the page list */
-    if (tb->page_addr[0] != page_addr) {
-        p = page_find(tb->page_addr[0] >> TARGET_PAGE_BITS);
-        tb_page_remove(&p->first_tb, tb);
-        invalidate_page_bitmap(p);
-    }
-    if (tb->page_addr[1] != -1 && tb->page_addr[1] != page_addr) {
-        p = page_find(tb->page_addr[1] >> TARGET_PAGE_BITS);
-        tb_page_remove(&p->first_tb, tb);
-        invalidate_page_bitmap(p);
-    }
+//    if (tb->page_addr[0] != page_addr) {
+//        p = page_find(tb->page_addr[0] >> TARGET_PAGE_BITS);
+//        tb_page_remove(&p->first_tb, tb);
+//        invalidate_page_bitmap(p);
+//    }
 
     /* remove the TB from the hash list */
     h = tb_jmp_cache_hash_func(tb->pc);
@@ -1104,8 +1106,10 @@ void tb_phys_invalidate(TranslationBlock *tb, tb_page_addr_t page_addr)
     }
 
     /* suppress this TB from the two jump lists */
-    tb_remove_from_jmp_list(tb, 0);
-    tb_remove_from_jmp_list(tb, 1);
+    for(int i = 0; i < 2*(MAX_INNER_JUMPS+1); i+=2) {
+        tb_remove_from_jmp_list(tb, i+0);
+        tb_remove_from_jmp_list(tb, i+1);
+    }
 
     /* suppress any remaining jumps to this TB */
     tb_jmp_unlink(tb);
@@ -1268,6 +1272,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     gen_code_buf = tcg_ctx->code_gen_ptr;
     tb->tc.ptr = gen_code_buf;
     tb->pc = pc;
+    tb->next_page_idx = 1;
     tb->cs_base = cs_base;
     tb->flags = flags;
     tb->cflags = cflags;
@@ -1292,8 +1297,10 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     trace_translate_block(tb, tb->pc, tb->tc.ptr);
 
     /* generate machine code */
-    tb->jmp_reset_offset[0] = TB_JMP_RESET_OFFSET_INVALID;
-    tb->jmp_reset_offset[1] = TB_JMP_RESET_OFFSET_INVALID;
+    for(int i = 0; i < 2 * (1 + MAX_INNER_JUMPS); i+=2) {
+        tb->jmp_reset_offset[i+0] = TB_JMP_RESET_OFFSET_INVALID;
+        tb->jmp_reset_offset[i+1] = TB_JMP_RESET_OFFSET_INVALID;
+    }
     tcg_ctx->tb_jmp_reset_offset = tb->jmp_reset_offset;
     if (TCG_TARGET_HAS_direct_jump) {
         tcg_ctx->tb_jmp_insn_offset = tb->jmp_target_arg;
@@ -1302,7 +1309,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         tcg_ctx->tb_jmp_insn_offset = NULL;
         tcg_ctx->tb_jmp_target_addr = tb->jmp_target_arg;
     }
-
 #ifdef CONFIG_PROFILER
     atomic_set(&prof->tb_count, prof->tb_count + 1);
     atomic_set(&prof->interm_time, prof->interm_time + profile_getclock() - ti);
@@ -1323,7 +1329,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         goto buffer_overflow;
     }
     tb->tc.size = gen_code_size;
-
 #ifdef CONFIG_PROFILER
     atomic_set(&prof->code_time, prof->code_time + profile_getclock() - ti);
     atomic_set(&prof->code_in_len, prof->code_in_len + tb->size);
@@ -1368,17 +1373,16 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
                  CODE_GEN_ALIGN));
 
     /* init jump list */
-    assert(((uintptr_t)tb & 3) == 0);
+    assert(((uintptr_t)tb & TB_EXIT_MASK) == 0);
     tb->jmp_list_first = (uintptr_t)tb | 2;
-    tb->jmp_list_next[0] = (uintptr_t)NULL;
-    tb->jmp_list_next[1] = (uintptr_t)NULL;
+
+    for(int i = 0; i < 2 * (1 + MAX_INNER_JUMPS); i++) {
+        tb->jmp_list_next[i] = (uintptr_t)NULL;
 
     /* init original jump addresses wich has been set during tcg_gen_code() */
-    if (tb->jmp_reset_offset[0] != TB_JMP_RESET_OFFSET_INVALID) {
-        tb_reset_jump(tb, 0);
-    }
-    if (tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
-        tb_reset_jump(tb, 1);
+        if (tb->jmp_reset_offset[i] != TB_JMP_RESET_OFFSET_INVALID) {
+            tb_reset_jump(tb, i);
+        }
     }
 
     /* check next page if needed */

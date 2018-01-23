@@ -174,12 +174,16 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
 #endif /* DEBUG_DISAS */
 
     cpu->can_do_io = !use_icount;
+    if(itb->pc == 0xea107) {
+        fprintf(stderr, "Here tb_ptr = %p\n", tb_ptr);
+    }
+
     ret = tcg_qemu_tb_exec(env, tb_ptr);
     cpu->can_do_io = 1;
     last_tb = (TranslationBlock *)(ret & ~TB_EXIT_MASK);
     tb_exit = ret & TB_EXIT_MASK;
     trace_exec_tb_exit(last_tb, tb_exit);
-//    fprintf(stderr, "TB %lx: ret = %lx, tb_exit = %x\n", itb->pc, ret, tb_exit);
+    fprintf(stderr, "TB %lx: ret = %lx, tb_exit = %x\n", itb->pc, ret, tb_exit);
 
     if (tb_exit > TB_EXIT_IDXMAX) {
         /* We didn't start executing this TB (eg because the instruction
@@ -222,6 +226,7 @@ static void cpu_exec_nocache(CPUState *cpu, int max_cycles,
     cflags |= MIN(max_cycles, CF_COUNT_MASK);
 
     tb_lock();
+    fprintf(stderr, "from exec\n");
     tb = tb_gen_code(cpu, orig_tb->pc, orig_tb->cs_base,
                      orig_tb->flags, cflags);
     tb->orig_tb = orig_tb;
@@ -377,6 +382,7 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
     /* add in TB jmp circular list */
     tb->jmp_list_next[n] = tb_next->jmp_list_first;
     tb_next->jmp_list_first = (uintptr_t)tb | n;
+//    tb->id
 }
 
 static inline TranslationBlock *tb_find(CPUState *cpu,
@@ -412,6 +418,7 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
 //            fprintf(stderr, "Not found\n");
 //#endif
             /* if no translated code available, then translate it now */
+            fprintf(stderr, "from find\n");
             tb = tb_gen_code(cpu, pc, cs_base, flags, cf_mask);
         } else {
 //#if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)

@@ -27,7 +27,7 @@
 /* allow to see translation results - the slowdown should be negligible, so we leave it */
 #define DEBUG_DISAS
 
-//#define ENABLE_BIG_TB
+#define ENABLE_BIG_TB
 //#define DEBUG_BIG_TB
 
 /* Page tracking code uses ram addresses in system mode, and virtual
@@ -322,7 +322,7 @@ struct tb_tc {
 struct TranslationBlock {
     target_ulong pc;   /* simulated PC corresponding to this block (EIP + CS base) */
 #ifdef ENABLE_BIG_TB
-#define MAX_INNER_JUMPS 5
+#define MAX_INNER_JUMPS 0
     target_ulong mid_entries[MAX_INNER_JUMPS];
     uint8_t *gen_mid_entries[MAX_INNER_JUMPS];
     unsigned instr_num_mid_entries[MAX_INNER_JUMPS];
@@ -355,8 +355,9 @@ struct TranslationBlock {
     struct TranslationBlock *orig_tb;
     /* first and second physical page containing code. The lower bit
        of the pointer tells the index in page_next[] */
-    struct TranslationBlock *page_next[2];
-    tb_page_addr_t page_addr[2];
+    struct TranslationBlock *page_next[2*(1+MAX_INNER_JUMPS)];
+    tb_page_addr_t page_addr[2*(1+MAX_INNER_JUMPS)];
+    int next_page_idx;
 
     /* The following data are used to directly call another TB from
      * the code of this one. This can be done either by emitting direct or
@@ -383,6 +384,7 @@ struct TranslationBlock {
      */
     uintptr_t jmp_list_next[2*(1+MAX_INNER_JUMPS)];
     uintptr_t jmp_list_first;
+
 };
 
 extern bool parallel_cpus;

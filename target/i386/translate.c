@@ -2235,7 +2235,9 @@ static inline void gen_goto_tb(DisasContext *s, int tb_num, target_ulong eip)
         tcg_gen_goto_tb(tb_num);
         gen_jmp_im(eip);
         tcg_gen_exit_tb((uintptr_t)s->base.tb + tb_num);
-//        s->base.is_jmp = DISAS_NORETURN;
+        if (s->cur_jumps <= 0) {
+            s->base.is_jmp = DISAS_NORETURN;
+        }
     } else {
         /* jump to another page */
         gen_jmp_im(eip);
@@ -2256,15 +2258,13 @@ static inline void gen_jcc(DisasContext *s, int b,
         gen_jcc1(s, b, l1);
         int exit = (MAX_INNER_JUMPS-s->cur_jumps)*2;
 
+        s->cur_jumps--;
         gen_goto_tb(s, exit+0, next_eip);
 
         gen_set_label(l1);
         gen_goto_tb(s, exit+1, val);
         s->cur_jumps--;
 //        fprintf(stderr, "exits: %d, %d, cur_jumps = %d\n", exit+0, exit+1, s->cur_jumps);
-        if (!s->cur_jumps) {
-            s->base.is_jmp = DISAS_NORETURN;
-        }
 //#ifdef ENABLE_BIG_TB
 //        } else {
 //            s->jumps_to_resolve[s->cur_jump_to_resolve].cc_op_dirty = s->cc_op_dirty;
@@ -2779,6 +2779,7 @@ static void gen_eob(DisasContext *s)
 /* Jump to register */
 static void gen_jr(DisasContext *s, TCGv dest)
 {
+    fprintf(stderr, "gen jr\n");
     do_gen_eob_worker(s, false, false, true);
 }
 
