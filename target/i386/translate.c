@@ -2250,23 +2250,21 @@ static inline void gen_jcc(DisasContext *s, int b,
 
     if (s->jmp_opt) {
         l1 = gen_new_label();
-//#ifdef ENABLE_BIG_TB
+#ifdef ENABLE_BIG_TB
 //        if (s->cur_jumps <= 0) {
-//#endif
+#endif
         gen_jcc1(s, b, l1);
         int exit = (MAX_INNER_JUMPS-s->cur_jumps)*2;
-//        if (exit > 1) {
-//            exit += 3;
-//        }
 
         gen_goto_tb(s, exit+0, next_eip);
 
         gen_set_label(l1);
         gen_goto_tb(s, exit+1, val);
+        s->cur_jumps--;
+//        fprintf(stderr, "exits: %d, %d, cur_jumps = %d\n", exit+0, exit+1, s->cur_jumps);
         if (!s->cur_jumps) {
             s->base.is_jmp = DISAS_NORETURN;
         }
-        s->cur_jumps--;
 //#ifdef ENABLE_BIG_TB
 //        } else {
 //            s->jumps_to_resolve[s->cur_jump_to_resolve].cc_op_dirty = s->cc_op_dirty;
@@ -2300,6 +2298,7 @@ static inline void gen_jcc(DisasContext *s, int b,
             gen_jcc1(s, b, l1);
 //            gen_tb_start(s->base.tb);
             s->cur_jumps--;
+//            fprintf(stderr, "exits1: cur_jumps = %d\n", s->cur_jumps);
             s->jumps_to_resolve[s->cur_jump_to_resolve].pc = val;
             s->jumps_to_resolve[s->cur_jump_to_resolve++].l = l1;
 #ifdef DEBUG_BIG_TB
@@ -2548,8 +2547,8 @@ static void gen_exception(DisasContext *s, int trapno, target_ulong cur_eip)
     gen_helper_raise_exception(cpu_env, tcg_const_i32(trapno));
 #ifdef ENABLE_BIG_TB
     s->met_exc = true;
+    gen_eob(s);
 #endif
-//    gen_eob(s);
     s->base.is_jmp = DISAS_NORETURN;
 }
 
@@ -2590,8 +2589,8 @@ static void gen_interrupt(DisasContext *s, int intno,
                                tcg_const_i32(next_eip - cur_eip));
 #ifdef ENABLE_BIG_TB
     s->met_exc = true;
+    gen_eob(s);
 #endif
-//    gen_eob(s);
     s->base.is_jmp = DISAS_NORETURN;
 }
 
@@ -2602,8 +2601,8 @@ static void gen_debug(DisasContext *s, target_ulong cur_eip)
     gen_helper_debug(cpu_env);
 #ifdef ENABLE_BIG_TB
     s->met_exc = true;
+    gen_eob(s);
 #endif
-//    gen_eob(s);
     s->base.is_jmp = DISAS_NORETURN;
 }
 
@@ -2665,8 +2664,8 @@ static void do_resolve_jumps(DisasContext *s)
                     TCGOp *label_op = tcg_ctx->gen_op_buf + label_idx;
                     TCGOp *target_op = tcg_ctx->gen_op_buf + target_idx;
                     TCGOp *label_start_op = tcg_ctx->gen_op_buf + label_start_idx;
-                    fprintf(stderr, "cc at %lx: %d, %x\n", s->instr_gen_code[i].pc,
-                            s->jumps_to_resolve[i].cc_op_dirty, s->jumps_to_resolve[i].cc_op);
+//                    fprintf(stderr, "cc at %lx: %d, %x\n", s->instr_gen_code[i].pc,
+//                            s->jumps_to_resolve[i].cc_op_dirty, s->jumps_to_resolve[i].cc_op);
                     s->cc_op_dirty = s->jumps_to_resolve[i].cc_op_dirty;
                     s->cc_op = s->jumps_to_resolve[i].cc_op;
 //                    gen_update_cc_op1(s);
@@ -2695,11 +2694,10 @@ static void do_resolve_jumps(DisasContext *s)
 //                gen_tb_start(s->base.tb);
                 gen_set_label(s->jumps_to_resolve[i].l);
                 gen_jmp_im(s->jumps_to_resolve[i].pc);
-                fprintf(stderr, "cc at %lx: %d, %x\n", s->instr_gen_code[i].pc,
-                        s->jumps_to_resolve[i].cc_op_dirty, s->jumps_to_resolve[i].cc_op);
+//                fprintf(stderr, "cc at %lx: %d, %x\n", s->instr_gen_code[i].pc,
+//                        s->jumps_to_resolve[i].cc_op_dirty, s->jumps_to_resolve[i].cc_op);
                 s->cc_op_dirty = s->jumps_to_resolve[i].cc_op_dirty;
                 s->cc_op = s->jumps_to_resolve[i].cc_op;
-//                gen_update_cc_op1(s);
                 tcg_gen_br(exit_l);
             }
         }
@@ -2842,10 +2840,11 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num,
             }
         } else {
             s->cur_jumps--;
+//            fprintf(stderr, "exits2: cur_jumps = %d\n", s->cur_jumps);
             gen_jmp_im(eip);
         }
 #else
-        gen_jmp_im(eip);
+//        gen_jmp_im(eip);
 #endif
         gen_eob(s);
     } else {
@@ -8690,7 +8689,7 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
 #endif
     dc->flags = flags;
 #ifdef ENABLE_BIG_TB
-    dc->jmp_opt = false;
+    dc->jmp_opt = true;
 #else
     dc->jmp_opt = !(dc->tf || dc->base.singlestep_enabled ||
                     (flags & HF_INHIBIT_IRQ_MASK));
@@ -8739,6 +8738,7 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
 
 static void i386_tr_tb_start(DisasContextBase *db, CPUState *cpu)
 {
+//    fprintf(stderr, "new TB\n");
 }
 
 static void i386_tr_insn_start(DisasContextBase *dcbase, CPUState *cpu)

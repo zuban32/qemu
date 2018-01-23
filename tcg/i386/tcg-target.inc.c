@@ -158,7 +158,6 @@ static void patch_reloc(tcg_insn_unit *code_ptr, int type,
         tcg_patch8(code_ptr, value);
         break;
     default:
-        printf("type = %d\n", type);
         tcg_abort();
     }
 }

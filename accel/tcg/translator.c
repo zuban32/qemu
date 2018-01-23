@@ -18,6 +18,8 @@
 #include "exec/log.h"
 #include "exec/translator.h"
 
+extern uint64_t transl_insns;
+
 /* Pairs with tcg_clear_temp_count.
    To be called by #TranslatorOps.{translate_insn,tb_stop} if
    (1) the target is sufficiently clean to support reporting,
@@ -69,6 +71,8 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
 
     while (true) {
         db->num_insns++;
+        transl_insns++;
+#
         ops->insn_start(db, cpu);
         tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
 

@@ -60,6 +60,8 @@
 #include "exec/log.h"
 #include "sysemu/sysemu.h"
 
+uint64_t transl_insns = 0;
+
 /* Forward declarations for functions declared in tcg-target.inc.c and
    used here. */
 static void tcg_target_init(TCGContext *s);
@@ -3335,6 +3337,8 @@ void tcg_dump_info(FILE *f, fprintf_function cpu_fprintf)
     tb_count = s->tb_count;
     tb_div_count = tb_count ? tb_count : 1;
     tot = s->interm_time + s->code_time;
+
+    cpu_fprintf(f, "translated: %" PRId64 "\n", transl_insns);
 
     cpu_fprintf(f, "JIT cycles          %" PRId64 " (%0.3f s at 2.4 GHz)\n",
                 tot, tot / 2.4e9);

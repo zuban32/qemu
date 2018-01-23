@@ -157,7 +157,7 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
 
     qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
                            "Trace %p [%d: " TARGET_FMT_lx "] %s\n",
-                           tb_ptr, cpu->cpu_index, itb->pc,
+                           itb->tc.ptr, cpu->cpu_index, itb->pc,
                            lookup_symbol(itb->pc));
 
 #if defined(DEBUG_DISAS)
@@ -199,11 +199,7 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
                 assert(cc->set_pc);
                 cc->set_pc(cpu, last_tb->pc);
             }
-//        } else {
-//            X86CPU *c = X86_CPU(cpu);
-//            cpu->env.eip = tb->pc - tb->cs_base;
-//            printf("next_pc = %lx\n", c->env.eip);
-//        }
+//         }
     }
     return ret;
 }
@@ -362,6 +358,7 @@ void tb_set_jmp_target(TranslationBlock *tb, int n, uintptr_t addr)
 static inline void tb_add_jump(TranslationBlock *tb, int n,
                                TranslationBlock *tb_next)
 {
+//    fprintf(stderr, "n = %d vs %lu\n", n, ARRAY_SIZE(tb->jmp_list_next));
     assert(n < ARRAY_SIZE(tb->jmp_list_next));
     if (tb->jmp_list_next[n]) {
         /* Another thread has already done this while we were
@@ -393,7 +390,6 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
 
     tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &flags, cf_mask);
 #ifdef ENABLE_BIG_TB
-    *actual_pc = pc;
 //#ifdef DEBUG_BIG_TB
 //    fprintf(stderr, "Looking for the TB at %lx...\n", pc);
 //#endif
