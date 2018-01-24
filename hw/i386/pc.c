@@ -107,7 +107,6 @@ struct hpet_fw_config hpet_cfg = {.count = UINT8_MAX};
 void gsi_handler(void *opaque, int n, int level)
 {
     GSIState *s = opaque;
-//    fprintf(stderr, "pc: %s GSI %d\n", level ? "raising" : "lowering", n);
     DPRINTF("pc: %s GSI %d\n", level ? "raising" : "lowering", n);
     if (n < ISA_NUM_IRQS) {
         qemu_set_irq(s->i8259_irq[n], level);
@@ -161,7 +160,6 @@ int cpu_get_pic_interrupt(CPUX86State *env)
 {
     X86CPU *cpu = x86_env_get_cpu(env);
     int intno;
-    fprintf(stderr, "PIC int\n");
 
     if (!kvm_irqchip_in_kernel()) {
         intno = apic_get_interrupt(cpu->apic_state);
@@ -175,7 +173,6 @@ int cpu_get_pic_interrupt(CPUX86State *env)
     }
 
     intno = pic_read_irq(isa_pic);
-    fprintf(stderr, "%d\n", intno);
     return intno;
 }
 

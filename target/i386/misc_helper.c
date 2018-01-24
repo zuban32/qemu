@@ -215,7 +215,6 @@ void helper_rdpmc(CPUX86State *env)
 
     /* currently unimplemented */
     qemu_log_mask(LOG_UNIMP, "x86: unimplemented rdpmc\n");
-    fprintf(stderr, "x86: unimplemented rdpmc\n");
     raise_exception_err(env, EXCP06_ILLOP, 0);
 }
 

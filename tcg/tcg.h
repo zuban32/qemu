@@ -678,7 +678,7 @@ struct TCGContext {
     struct TCGLabelPoolData *pool_labels;
 #endif
 
-    TCGLabel *exitreq_label, *exitreqmid_label;
+    TCGLabel *exitreq_label;
 
     TCGTempSet free_temps[TCG_TYPE_COUNT * 2];
     TCGTemp temps[TCG_MAX_TEMPS]; /* globals first, temps after */
@@ -1145,11 +1145,10 @@ static inline unsigned get_mmuidx(TCGMemOpIdx oi)
  * to this default (which just calls the prologue.code emitted by
  * tcg_target_qemu_prologue()).
  */
-#define TB_EXIT_MASK 7
+#define TB_EXIT_MASK 3
 #define TB_EXIT_IDX0 0
 #define TB_EXIT_IDX1 1
 #define TB_EXIT_REQUESTED 3
-#define TB_EXIT_MID_REQUESTED 4
 
 #ifdef HAVE_TCG_QEMU_TB_EXEC
 uintptr_t tcg_qemu_tb_exec(CPUArchState *env, uint8_t *tb_ptr);

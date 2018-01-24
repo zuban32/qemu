@@ -18,19 +18,6 @@
 #include "exec/exec-all.h"
 #include "exec/tb-hash.h"
 
-static inline bool check_pc(TranslationBlock *tb, target_ulong *pc)
-{
-    target_ulong new_pc = tb->pc;
-    bool check_pc = new_pc == *pc;
-//#ifdef ENABLE_BIG_TB
-//    for(int i = 0; i < tb->cur_free_entry && !check_pc; i++) {
-//        new_pc = tb->mid_entries[i];
-//        check_pc |= (new_pc == *pc);
-//    }
-//#endif
-    return check_pc;
-}
-
 /* Might cause an exception, so have a longjmp destination ready */
 static inline TranslationBlock *
 tb_lookup__cpu_state(CPUState *cpu, target_ulong *pc, target_ulong *cs_base,
@@ -44,7 +31,7 @@ tb_lookup__cpu_state(CPUState *cpu, target_ulong *pc, target_ulong *cs_base,
     hash = tb_jmp_cache_hash_func(*pc);
     tb = atomic_rcu_read(&cpu->tb_jmp_cache[hash]);
     if (likely(tb &&
-               check_pc(tb, pc) &&
+               tb->pc == *pc &&
                tb->cs_base == *cs_base &&
                tb->flags == *flags &&
                tb->trace_vcpu_dstate == *cpu->trace_dstate &&

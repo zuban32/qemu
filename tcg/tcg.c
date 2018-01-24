@@ -748,8 +748,6 @@ TranslationBlock *tcg_tb_alloc(TCGContext *s)
     uintptr_t align = qemu_icache_linesize;
     TranslationBlock *tb;
     void *next;
-    s->exitreq_label = NULL;
-    s->exitreqmid_label = NULL;
 
  retry:
     tb = (void *)ROUND_UP((uintptr_t)s->code_gen_ptr, align);
@@ -3228,14 +3226,6 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
 
     num_insns = -1;
     for (oi = s->gen_op_buf[0].next; oi != 0; oi = oi_next) {
-#ifdef ENABLE_BIG_TB
-        for(int i = 0; i < tb->cur_free_entry; i++) {
-            if(oi == tb->instr_num_mid_entries[i]) {
-                tb->gen_mid_entries[i] = s->code_ptr;
-                break;
-            }
-        }
-#endif
 
         TCGOp * const op = &s->gen_op_buf[oi];
         TCGOpcode opc = op->opc;

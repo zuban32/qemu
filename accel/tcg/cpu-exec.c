@@ -137,29 +137,18 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
 #endif /* CONFIG USER ONLY */
 
 /* Execute a TB, and fix up the CPU state afterwards if necessary */
-static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb,
-        target_ulong pc_start)
+static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
 {
     CPUArchState *env = cpu->env_ptr;
     uintptr_t ret;
     TranslationBlock *last_tb;
     int tb_exit;
-
     uint8_t *tb_ptr = itb->tc.ptr;
 
-#ifdef ENABLE_BIG_TB
-//    for(int i = 0; i < itb->cur_free_entry; i++) {
-//        if (pc_start == itb->mid_entries[i]) {
-//            tb_ptr = itb->gen_mid_entries[i];
-//            break;
-//        }
-//    }
-#endif
-
-    qemu_log_mask_and_addr(CPU_LOG_EXEC, pc_start,
+    qemu_log_mask_and_addr(CPU_LOG_EXEC, itb->pc,
                            "Trace %p [%d: " TARGET_FMT_lx "] %s\n",
-                           tb_ptr, cpu->cpu_index, pc_start,
-                           lookup_symbol(pc_start));
+                           itb->tc.ptr, cpu->cpu_index, itb->pc,
+                           lookup_symbol(itb->pc));
 
 #if defined(DEBUG_DISAS)
     if (qemu_loglevel_mask(CPU_LOG_TB_CPU)
@@ -192,17 +181,11 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb,
                                TARGET_FMT_lx "] %s\n",
                                last_tb->tc.ptr, last_tb->pc,
                                lookup_symbol(last_tb->pc));
-        if(tb_exit != TB_EXIT_MID_REQUESTED) {
-            if (cc->synchronize_from_tb) {
-                cc->synchronize_from_tb(cpu, last_tb);
-            } else {
-                assert(cc->set_pc);
-                cc->set_pc(cpu, last_tb->pc);
-            }
+        if (cc->synchronize_from_tb) {
+            cc->synchronize_from_tb(cpu, last_tb);
         } else {
-//            X86CPU *c = X86_CPU(cpu);
-//            cpu->env.eip = tb->pc - tb->cs_base;
-//            printf("next_pc = %lx\n", c->env.eip);
+            assert(cc->set_pc);
+            cc->set_pc(cpu, last_tb->pc);
         }
     }
     return ret;
@@ -212,8 +195,7 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb,
 /* Execute the code without caching the generated code. An interpreter
    could be used if available. */
 static void cpu_exec_nocache(CPUState *cpu, int max_cycles,
-                             TranslationBlock *orig_tb, bool ignore_icount,
-							 target_ulong tpc)
+                             TranslationBlock *orig_tb, bool ignore_icount)
 {
     TranslationBlock *tb;
     uint32_t cflags = curr_cflags() | CF_NOCACHE;
@@ -234,7 +216,7 @@ static void cpu_exec_nocache(CPUState *cpu, int max_cycles,
 
     /* execute the generated code */
     trace_exec_tb_nocache(tb, tb->pc);
-    cpu_tb_exec(cpu, tb, tpc);
+    cpu_tb_exec(cpu, tb);
 
     tb_lock();
     tb_phys_invalidate(tb, -1);
@@ -272,7 +254,7 @@ void cpu_exec_step_atomic(CPUState *cpu)
         cc->cpu_exec_enter(cpu);
         /* execute the generated code */
         trace_exec_tb(tb, pc);
-        cpu_tb_exec(cpu, tb, 0);
+        cpu_tb_exec(cpu, tb);
         cc->cpu_exec_exit(cpu);
         parallel_cpus = true;
 
@@ -385,8 +367,7 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
 
 static inline TranslationBlock *tb_find(CPUState *cpu,
                                         TranslationBlock *last_tb,
-                                        int tb_exit, uint32_t cf_mask,
-                                        target_ulong *actual_pc)
+                                        int tb_exit, uint32_t cf_mask)
 {
     TranslationBlock *tb;
     target_ulong cs_base, pc;
@@ -394,12 +375,6 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
     bool acquired_tb_lock = false;
 
     tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &flags, cf_mask);
-#ifdef ENABLE_BIG_TB
-    *actual_pc = pc;
-//#ifdef DEBUG_BIG_TB
-//    fprintf(stderr, "Looking for the TB at %lx...\n", pc);
-//#endif
-#endif
     if (tb == NULL) {
         /* mmap_lock is needed by tb_gen_code, and mmap_lock must be
          * taken outside tb_lock. As system emulation is currently
@@ -414,35 +389,13 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
          */
         tb = tb_htable_lookup(cpu, pc, cs_base, flags, cf_mask);
         if (likely(tb == NULL)) {
-//#if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
-//            fprintf(stderr, "Not found\n");
-//#endif
             /* if no translated code available, then translate it now */
             tb = tb_gen_code(cpu, pc, cs_base, flags, cf_mask);
-        } else {
-//#if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
-//            fprintf(stderr, "Found\n");
-//#endif
         }
 
         mmap_unlock();
         /* We add the TB in the virtual pc hash table for the fast lookup */
-//#if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
-//        fprintf(stderr, "Adding tb [%lx] to the cache\n", pc);
-//#endif
         atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(pc)], tb);
-#ifdef ENABLE_BIG_TB
-        for(int i = 0; i < tb->cur_free_entry; i++) {
-//#ifdef DEBUG_BIG_TB
-//            fprintf(stderr, "Adding tb [%lx] to the cache\n", tb->mid_entries[i]);
-//#endif
-//            atomic_set(&cpu->tb_jmp_cache[tb_jmp_cache_hash_func(tb->mid_entries[i])], tb);
-        }
-    } else {
-//#ifdef DEBUG_BIG_TB
-//        fprintf(stderr, "Found\n");
-//#endif
-#endif
     }
 #ifndef CONFIG_USER_ONLY
     /* We don't take care of direct jumps when address mapping changes in
@@ -460,7 +413,7 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
             acquired_tb_lock = true;
         }
         if (!(tb->cflags & CF_INVALID)) {
-//            tb_add_jump(last_tb, tb_exit, tb);
+            tb_add_jump(last_tb, tb_exit, tb);
         }
     }
     if (acquired_tb_lock) {
@@ -547,8 +500,7 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
     } else if (replay_has_exception()
                && cpu->icount_decr.u16.low + cpu->icount_extra == 0) {
         /* try to cause an exception pending in the log */
-        target_ulong tpc = 0;
-        cpu_exec_nocache(cpu, 1, tb_find(cpu, NULL, 0, curr_cflags(), &tpc), true, tpc);
+        cpu_exec_nocache(cpu, 1, tb_find(cpu, NULL, 0, curr_cflags()), true);
         *ret = -1;
         return true;
 #endif
@@ -641,29 +593,25 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
 }
 
 static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
-                                    TranslationBlock **last_tb, int *tb_exit,
-                                    target_ulong pc_start)
+                                    TranslationBlock **last_tb, int *tb_exit)
 {
     uintptr_t ret;
     int32_t insns_left;
 
     trace_exec_tb(tb, tb->pc);
-    ret = cpu_tb_exec(cpu, tb, pc_start);
+    ret = cpu_tb_exec(cpu, tb);
     tb = (TranslationBlock *)(ret & ~TB_EXIT_MASK);
     *tb_exit = ret & TB_EXIT_MASK;
-//#if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
-//    fprintf(stderr, "tb_exit = %d\n", *tb_exit);
-//#endif
-    if (*tb_exit != TB_EXIT_REQUESTED && *tb_exit != TB_EXIT_MID_REQUESTED) {
+#if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
+    fprintf(stderr, "tb_exit = %d\n", *tb_exit);
+#endif
+    if (*tb_exit != TB_EXIT_REQUESTED) {
         *last_tb = tb;
         return;
     }
 
     *last_tb = NULL;
     insns_left = atomic_read(&cpu->icount_decr.u32);
-//#if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
-//    fprintf(stderr, "insns_left = %d\n", insns_left);
-//#endif
     atomic_set(&cpu->icount_decr.u16.high, 0);
     if (insns_left < 0) {
         /* Something asked us to stop executing chained TBs; just
@@ -692,7 +640,7 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
          * handle the next event.
          */
         if (insns_left > 0) {
-            cpu_exec_nocache(cpu, insns_left, tb, false, pc_start);
+            cpu_exec_nocache(cpu, insns_left, tb, false);
         }
     }
 #endif
@@ -765,9 +713,8 @@ int cpu_exec(CPUState *cpu)
                 cpu->cflags_next_tb = -1;
             }
 
-            target_ulong pc_start = 0;
-            tb = tb_find(cpu, last_tb, tb_exit, cflags, &pc_start);
-            cpu_loop_exec_tb(cpu, tb, &last_tb, &tb_exit, pc_start);
+            tb = tb_find(cpu, last_tb, tb_exit, cflags);
+            cpu_loop_exec_tb(cpu, tb, &last_tb, &tb_exit);
             /* Try to align the host and virtual clocks
                if the guest is in advance */
             align_clocks(&sc, cpu);

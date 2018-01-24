@@ -118,7 +118,6 @@ void QEMU_NORETURN raise_interrupt(CPUX86State *env, int intno, int is_int,
 void raise_exception_err(CPUX86State *env, int exception_index,
                          int error_code)
 {
-    fprintf(stderr, "exc err\n");
     raise_interrupt2(env, exception_index, 0, error_code, 0, 0);
 }
 
