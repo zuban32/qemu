@@ -381,7 +381,10 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
 
     /* add in TB jmp circular list */
     tb->jmp_list_next[n] = tb_next->jmp_list_first;
-    tb_next->jmp_list_first = (uintptr_t)tb | n;
+//    tb_next->jmp_list_first = (uintptr_t)tb | n;
+    tb->idx_next[n] = tb_next->idx_first;
+    tb_next->jmp_list_first = (uintptr_t)tb;
+    tb_next->idx_first = n;
 }
 
 static inline TranslationBlock *tb_find(CPUState *cpu,
@@ -461,7 +464,12 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
             acquired_tb_lock = true;
         }
         if (!(tb->cflags & CF_INVALID)) {
-            tb_add_jump(last_tb, tb_exit, tb);
+            for(int i = 0; i < 2 * (1 + MAX_INNER_JUMPS); i++) {
+                if (last_tb->pc_next[i] == tb->pc) {
+                    tb_add_jump(last_tb, i, tb);
+                }
+            }
+//            tb_add_jump(last_tb, tb_exit, tb);
         }
     }
     if (acquired_tb_lock) {

@@ -2552,7 +2552,7 @@ void tcg_gen_goto_tb(unsigned idx)
 //    tcg_debug_assert(idx <= 1);
 #ifdef CONFIG_DEBUG_TCG
     /* Verify that we havn't seen this numbered exit before.  */
-    tcg_debug_assert((tcg_ctx->goto_tb_issue_mask & (1 << idx)) == 0);
+//    tcg_debug_assert((tcg_ctx->goto_tb_issue_mask & (1 << idx)) == 0);
     tcg_ctx->goto_tb_issue_mask |= 1 << idx;
 #endif
     tcg_gen_op1i(INDEX_op_goto_tb, idx);

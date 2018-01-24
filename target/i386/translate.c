@@ -159,6 +159,7 @@ typedef struct DisasContext {
     bool jumps_resolved;
     bool met_exc;
     bool met_br;
+    int goto_tb_idx;
 #endif
 } DisasContext;
 
@@ -2230,9 +2231,10 @@ static inline void gen_goto_tb(DisasContext *s, int tb_num, target_ulong eip)
 
     if (use_goto_tb(s, pc))  {
         /* jump to same page: we can use a direct jump */
+        s->base.tb->pc_next[tb_num] = pc;
         tcg_gen_goto_tb(tb_num);
         gen_jmp_im(eip);
-        tcg_gen_exit_tb((uintptr_t)s->base.tb + tb_num);
+        tcg_gen_exit_tb((uintptr_t)s->base.tb);
 //        s->base.is_jmp = DISAS_NORETURN;
     } else {
         /* jump to another page */
@@ -2251,20 +2253,17 @@ static inline void gen_jcc(DisasContext *s, int b,
 //#ifdef ENABLE_BIG_TB
 //        if (s->cur_jumps <= 0) {
 //#endif
-        gen_jcc1(s, b, l1);
-        int exit = (MAX_INNER_JUMPS-s->cur_jumps)*2;
-//        if (exit > 1) {
-//            exit += 3;
-//        }
+        gen_jcc1(s, b^1, l1);
 
-        gen_goto_tb(s, exit+0, next_eip);
+        gen_goto_tb(s, s->goto_tb_idx++, next_eip);
 
         gen_set_label(l1);
-        gen_goto_tb(s, exit+1, val);
-        if (!s->cur_jumps) {
+//        gen_goto_tb(s, exit+1, val);
+        if (s->goto_tb_idx >= 2 *(1 + MAX_INNER_JUMPS) - 1) {
+            gen_goto_tb(s, s->goto_tb_idx++, val);
             s->base.is_jmp = DISAS_NORETURN;
         }
-        s->cur_jumps--;
+
 //#ifdef ENABLE_BIG_TB
 //        } else {
 //            s->jumps_to_resolve[s->cur_jump_to_resolve].cc_op_dirty = s->cc_op_dirty;
@@ -2793,6 +2792,7 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num,
     set_cc_op(s, CC_OP_DYNAMIC);
     if (s->jmp_opt) {
         gen_goto_tb(s, tb_num, eip);
+        s->base.is_jmp = DISAS_NORETURN;
     } else if (!break_tb) {
 #ifdef ENABLE_BIG_TB
         bool back_arc = is_backarc(s, eip);
@@ -2853,7 +2853,7 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num,
 
 static void gen_jmp(DisasContext *s, target_ulong eip, bool break_tb)
 {
-    gen_jmp_tb(s, eip, 0, break_tb);
+    gen_jmp_tb(s, eip, s->goto_tb_idx++, break_tb);
 }
 
 static inline void gen_ldq_env_A0(DisasContext *s, int offset)
@@ -8733,6 +8733,7 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
     dc->jumps_resolved = false;
     dc->met_exc = false;
     dc->met_br = false;
+    dc->goto_tb_idx = 0;
 #endif
 
     return max_insns;
