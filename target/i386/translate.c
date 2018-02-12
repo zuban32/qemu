@@ -150,6 +150,8 @@ typedef struct DisasContext {
     int cpuid_7_0_ebx_features;
     int cpuid_xsave_features;
     sigjmp_buf jmpbuf;
+    int cur_exit;
+    int cur_jmp_exit;
 #ifdef ENABLE_BIG_TB
     int cur_jumps;
     instr_gen_place instr_gen_code[1024];
@@ -2229,7 +2231,9 @@ static inline void gen_goto_tb(DisasContext *s, int tb_num, target_ulong eip)
         tcg_gen_goto_tb(tb_num);
         gen_jmp_im(eip);
         tcg_gen_exit_tb((uintptr_t)s->base.tb + tb_num);
+#ifndef ENABLE_BIG_TB
         s->base.is_jmp = DISAS_NORETURN;
+#endif
     } else {
         /* jump to another page */
         gen_jmp_im(eip);
@@ -2246,10 +2250,16 @@ static inline void gen_jcc(DisasContext *s, int b,
         l1 = gen_new_label();
         gen_jcc1(s, b, l1);
 
-        gen_goto_tb(s, 0, next_eip);
+        gen_goto_tb(s, s->cur_exit+0, next_eip);
 
         gen_set_label(l1);
-        gen_goto_tb(s, 1, val);
+        gen_goto_tb(s, s->cur_exit+1, val);
+        s->cur_exit += 2;
+#ifdef ENABLE_BIG_TB
+        if (--s->cur_jumps < 0) {
+            s->base.is_jmp = DISAS_NORETURN;
+        }
+#endif
     } else {
         l1 = gen_new_label();
 #ifdef ENABLE_BIG_TB
@@ -2764,7 +2774,12 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num,
     gen_update_cc_op(s);
     set_cc_op(s, CC_OP_DYNAMIC);
     if (s->jmp_opt) {
-        gen_goto_tb(s, tb_num, eip);
+        s->cur_jmp_exit = s->cur_exit;
+        gen_goto_tb(s, s->cur_exit + tb_num, eip);
+        s->cur_jmp_exit++;
+        if (s->cur_jmp_exit % 2 == 0) {
+            s->cur_exit += 2;
+        }
 #ifdef ENABLE_BIG_TB
     } else if (!break_tb) {
         bool back_arc = is_backarc(s, eip);
@@ -8651,7 +8666,7 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
 #endif
     dc->flags = flags;
 #ifdef ENABLE_BIG_TB
-    dc->jmp_opt = false;
+    dc->jmp_opt = true;
 #else
     dc->jmp_opt = !(dc->tf || dc->base.singlestep_enabled ||
                     (flags & HF_INHIBIT_IRQ_MASK));
@@ -8667,7 +8682,7 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
        additional step for ecx=0 when icount is enabled.
      */
 #ifdef ENABLE_BIG_TB
-    dc->repz_opt = false;
+    dc->repz_opt = true;
 #else
     dc->repz_opt = !dc->jmp_opt && !(tb_cflags(dc->base.tb) & CF_USE_ICOUNT);
 #endif
@@ -8690,6 +8705,8 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
     cpu_ptr1 = tcg_temp_new_ptr();
     cpu_cc_srcT = tcg_temp_local_new();
 
+    dc->cur_exit = 0;
+    dc->cur_jmp_exit = 0;
 #ifdef ENABLE_BIG_TB
     dc->cur_jumps = MAX_INNER_JUMPS;
     dc->cur_instr_code = 0;

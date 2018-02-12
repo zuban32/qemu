@@ -1013,12 +1013,12 @@ static inline void tb_remove_from_jmp_list(TranslationBlock *tb, int n)
         /* find tb(n) in circular list */
         for (;;) {
             ntb = *ptb;
-            n1 = ntb & 3;
-            tb1 = (TranslationBlock *)(ntb & ~3);
+            n1 = ntb & TB_EXIT_MASK;
+            tb1 = (TranslationBlock *)(ntb & ~TB_EXIT_MASK);
             if (n1 == n && tb1 == tb) {
                 break;
             }
-            if (n1 == 2) {
+            if (n1 == TB_EXIT_IDXMAX) {
                 ptb = &tb1->jmp_list_first;
             } else {
                 ptb = &tb1->jmp_list_next[n1];
@@ -1049,9 +1049,9 @@ static inline void tb_jmp_unlink(TranslationBlock *tb)
     ptb = &tb->jmp_list_first;
     for (;;) {
         ntb = *ptb;
-        n1 = ntb & 3;
-        tb1 = (TranslationBlock *)(ntb & ~3);
-        if (n1 == 2) {
+        n1 = ntb & TB_EXIT_MASK;
+        tb1 = (TranslationBlock *)(ntb & ~TB_EXIT_MASK);
+        if (n1 == TB_EXIT_IDXMAX) {
             break;
         }
         tb_reset_jump(tb1, n1);
@@ -1104,8 +1104,10 @@ void tb_phys_invalidate(TranslationBlock *tb, tb_page_addr_t page_addr)
     }
 
     /* suppress this TB from the two jump lists */
-    tb_remove_from_jmp_list(tb, 0);
-    tb_remove_from_jmp_list(tb, 1);
+    for(int i = 0; i < 2 * (MAX_INNER_JUMPS + 1); i++) {
+        tb_remove_from_jmp_list(tb, i);
+    }
+//    tb_remove_from_jmp_list(tb, 1);
 
     /* suppress any remaining jumps to this TB */
     tb_jmp_unlink(tb);
@@ -1292,8 +1294,10 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     trace_translate_block(tb, tb->pc, tb->tc.ptr);
 
     /* generate machine code */
-    tb->jmp_reset_offset[0] = TB_JMP_RESET_OFFSET_INVALID;
-    tb->jmp_reset_offset[1] = TB_JMP_RESET_OFFSET_INVALID;
+    for(int i = 0; i < 2*(MAX_INNER_JUMPS + 1); i+=2) {
+        tb->jmp_reset_offset[0+i] = TB_JMP_RESET_OFFSET_INVALID;
+        tb->jmp_reset_offset[1+i] = TB_JMP_RESET_OFFSET_INVALID;
+    }
     tcg_ctx->tb_jmp_reset_offset = tb->jmp_reset_offset;
     if (TCG_TARGET_HAS_direct_jump) {
         tcg_ctx->tb_jmp_insn_offset = tb->jmp_target_arg;
@@ -1368,18 +1372,24 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
                  CODE_GEN_ALIGN));
 
     /* init jump list */
-    assert(((uintptr_t)tb & 3) == 0);
-    tb->jmp_list_first = (uintptr_t)tb | 2;
-    tb->jmp_list_next[0] = (uintptr_t)NULL;
-    tb->jmp_list_next[1] = (uintptr_t)NULL;
+    assert(((uintptr_t)tb & TB_EXIT_MASK) == 0);
+    tb->jmp_list_first = (uintptr_t)tb | TB_EXIT_IDXMAX;
+//    tb->jmp_list_next[0] = (uintptr_t)NULL;
+//    tb->jmp_list_next[1] = (uintptr_t)NULL;
+
+    for(int i = 0; i < 2 * (MAX_INNER_JUMPS + 1); i++) {
+        tb->jmp_list_next[i] = (uintptr_t)NULL;
+        if (tb->jmp_reset_offset[i] != TB_JMP_RESET_OFFSET_INVALID)
+            tb_reset_jump(tb, i);
+    }
 
     /* init original jump addresses wich has been set during tcg_gen_code() */
-    if (tb->jmp_reset_offset[0] != TB_JMP_RESET_OFFSET_INVALID) {
-        tb_reset_jump(tb, 0);
-    }
-    if (tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
-        tb_reset_jump(tb, 1);
-    }
+//    if (tb->jmp_reset_offset[0] != TB_JMP_RESET_OFFSET_INVALID) {
+//        tb_reset_jump(tb, 0);
+//    }
+//    if (tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
+//        tb_reset_jump(tb, 1);
+//    }
 
     /* check next page if needed */
     virt_page2 = (pc + tb->size - 1) & TARGET_PAGE_MASK;

@@ -745,7 +745,7 @@ void tcg_context_init(TCGContext *s)
  */
 TranslationBlock *tcg_tb_alloc(TCGContext *s)
 {
-    uintptr_t align = qemu_icache_linesize;
+    uintptr_t align = 1 << 16;//qemu_icache_linesize;
     TranslationBlock *tb;
     void *next;
 
