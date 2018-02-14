@@ -2251,12 +2251,15 @@ static inline void gen_jcc(DisasContext *s, int b,
                            target_ulong val, target_ulong next_eip)
 {
     TCGLabel *l1, *l2;
+//    fprintf(stderr, "Jcc: %lx, %lx; %d, %d, %d\n", val, next_eip, s->cur_jumps-1, use_goto_tb(s, val),
+//            use_goto_tb(s, next_eip));
 
     if (s->jmp_opt) {
 #ifdef ENABLE_BIG_TB
-        if (--s->cur_jumps < 0 || !use_goto_tb(s, val)) {
+        if (--s->cur_jumps < 0 || !use_goto_tb(s, val) || !use_goto_tb(s, next_eip)) {
 #endif
             l1 = gen_new_label();
+//            fprintf(stderr, "l between 2 goto_tbs is l%d\n", l1->id);
             gen_jcc1(s, b, l1);
 
             gen_goto_tb(s, s->cur_exit+0, next_eip);
@@ -2264,15 +2267,15 @@ static inline void gen_jcc(DisasContext *s, int b,
             gen_set_label(l1);
             gen_goto_tb(s, s->cur_exit+1, val);
             s->cur_exit += 2;
-            do_resolve_jumps(s);
 #ifdef ENABLE_BIG_TB
             s->base.is_jmp = DISAS_NORETURN;
+            do_resolve_jumps(s);
         } else {
             s->jumps_to_resolve[s->cur_jump_to_resolve].cc_op_dirty = s->cc_op_dirty;
             s->jumps_to_resolve[s->cur_jump_to_resolve].cc_op = s->cc_op;
             l1 = gen_new_label();
             gen_jcc1(s, b, l1);
-//            gen_goto_tb(s, s->cur_exit+0, next_eip);
+            gen_goto_tb(s, s->cur_exit++ +0, next_eip);
 //            gen_set_label(l1);
 //            s->cur_jumps--;
             s->jumps_to_resolve[s->cur_jump_to_resolve].pc = val;
@@ -2655,6 +2658,9 @@ static void do_resolve_jumps(DisasContext *s)
     if(!s->jumps_resolved) {
 #ifdef DEBUG_BIG_TB
         fprintf(stderr, "Resolving jumps%s ...\n", (s->jmp_opt) ? "[opt]" : "");
+        if (!s->cur_jump_to_resolve) {
+            fprintf(stderr, "No jumps to resolve\n");
+        }
 #endif
         for(int i = 0; i < s->cur_jump_to_resolve; i++) {
             bool found = false;
