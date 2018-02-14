@@ -345,6 +345,9 @@ void tb_set_jmp_target(TranslationBlock *tb, int n, uintptr_t addr)
 static inline void tb_add_jump(TranslationBlock *tb, int n,
                                TranslationBlock *tb_next)
 {
+    if (n >= ARRAY_SIZE(tb->jmp_list_next)) {
+        fprintf(stderr, "n = %d, sz = %lu\n", n, ARRAY_SIZE(tb->jmp_list_next));
+    }
     assert(n < ARRAY_SIZE(tb->jmp_list_next));
     if (tb->jmp_list_next[n]) {
         /* Another thread has already done this while we were
