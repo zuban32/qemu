@@ -104,6 +104,7 @@ typedef struct jump_to_resolve {
     TCGLabel *l;
     CCOp cc_op;
     bool cc_op_dirty;
+    int place;
 } jump_to_resolve;
 #endif
 
@@ -1209,6 +1210,7 @@ static inline void gen_repz_ ## op(DisasContext *s, TCGMemOp ot,              \
     if (s->repz_opt)                                                          \
         gen_op_jz_ecx(s->aflag, l2);                                          \
     gen_jmp(s, cur_eip, false);                                                      \
+    gen_eob(s);\
 }
 
 #define GEN_REPZ2(op)                                                         \
@@ -1227,6 +1229,7 @@ static inline void gen_repz_ ## op(DisasContext *s, TCGMemOp ot,              \
     if (s->repz_opt)                                                          \
         gen_op_jz_ecx(s->aflag, l2);                                          \
     gen_jmp(s, cur_eip, false);                                                      \
+    gen_eob(s);\
 }
 
 GEN_REPZ(movs)
@@ -2248,17 +2251,29 @@ static inline void gen_jcc(DisasContext *s, int b,
 
     if (s->jmp_opt) {
         l1 = gen_new_label();
-        gen_jcc1(s, b, l1);
+        if (--s->cur_jumps < 0 || !use_goto_tb(s, val)) {
+            gen_jcc1(s, b, l1);
 
-        gen_goto_tb(s, s->cur_exit+0, next_eip);
+            gen_goto_tb(s, s->cur_exit++, next_eip);
 
-        gen_set_label(l1);
-        gen_goto_tb(s, s->cur_exit+1, val);
-        s->cur_exit += 2;
-#ifdef ENABLE_BIG_TB
-        if (--s->cur_jumps < 0) {
+            gen_set_label(l1);
+            gen_goto_tb(s, s->cur_exit++, val);
             s->base.is_jmp = DISAS_NORETURN;
+            do_resolve_jumps(s);
+//            gen_eob(s);
+        } else {
+            s->jumps_to_resolve[s->cur_jump_to_resolve].pc = val;
+//            s->jumps_to_resolve[s->cur_jump_to_resolve].tb = s->cur_exit++;
+            s->jumps_to_resolve[s->cur_jump_to_resolve++].place = tcg_ctx->gen_next_op_idx;
+            gen_jcc1(s, b^1, l1);
+//            gen_goto_tb(s, s->cur_exit++, val);
+            gen_set_label(l1);
         }
+//        s->cur_exit += 2;
+#ifdef ENABLE_BIG_TB
+//        if (--s->cur_jumps < 0) {
+//            s->base.is_jmp = DISAS_NORETURN;
+//        }
 #endif
     } else {
         l1 = gen_new_label();
@@ -2629,17 +2644,26 @@ static void gen_bnd_jmp(DisasContext *s)
 static void do_resolve_jumps(DisasContext *s)
 {
     TCGLabel *exit_l = gen_new_label();
-    tcg_gen_br(exit_l);
+    if(!s->jmp_opt) {
+        tcg_gen_br(exit_l);
+    }
     if(!s->jumps_resolved) {
+        s->jumps_resolved = true;
 #ifdef DEBUG_BIG_TB
-        fprintf(stderr, "Resolving jumps...\n");
+        fprintf(stderr, "Resolving %d jumps...\n", s->cur_jump_to_resolve);
 #endif
         for(int i = 0; i < s->cur_jump_to_resolve; i++) {
             bool found = false;
             for(int j = 0; j < s->cur_instr_code; j++) {
                 if (s->instr_gen_code[j].pc == s->jumps_to_resolve[i].pc) {
                     int label_start_idx = tcg_ctx->gen_next_op_idx;
-                    gen_set_label(s->jumps_to_resolve[i].l);
+                    TCGLabel *l;
+                    if (!s->jmp_opt) {
+                        l = s->jumps_to_resolve[i].l;
+                    } else {
+                        l = gen_new_label();
+                    }
+                    gen_set_label(l);
 //                    gen_tb_start(s->base.tb);
                     int label_idx = tcg_ctx->gen_next_op_idx - 1;
                     int target_idx = s->instr_gen_code[j].op_idx;
@@ -2649,7 +2673,9 @@ static void do_resolve_jumps(DisasContext *s)
                     s->cc_op_dirty = s->jumps_to_resolve[i].cc_op_dirty;
                     s->cc_op = s->jumps_to_resolve[i].cc_op;
 //                    gen_update_cc_op1(s);
-                    tcg_gen_br(exit_l);
+                    if (!s->jmp_opt) {
+                        tcg_gen_br(exit_l);
+                    }
 
                     tcg_ctx->gen_op_buf[target_op->prev].next = label_start_idx;
                     tcg_ctx->gen_op_buf[label_start_op->prev].next = label_op->next;
@@ -2658,6 +2684,20 @@ static void do_resolve_jumps(DisasContext *s)
                     label_start_op->prev = target_op->prev;
                     label_op->next = target_idx;
                     target_op->prev = label_idx;
+
+                    if (s->jmp_opt) {
+                        TCGOp *prev_op = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].place;
+                        int cur_idx = tcg_ctx->gen_next_op_idx;
+                        TCGOp *cur_op = tcg_ctx->gen_op_buf + tcg_ctx->gen_next_op_idx;
+                        TCGOp *next_op = tcg_ctx->gen_op_buf + prev_op->next;
+                        tcg_gen_br(l);
+                        next_op->prev = cur_idx;
+                        cur_op->next = prev_op->next;
+                        cur_op->prev = s->jumps_to_resolve[i].place;
+                        prev_op->next = cur_idx;
+                        tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx].prev = tcg_ctx->gen_next_op_idx - 2;
+                        tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx-2].next = tcg_ctx->gen_next_op_idx;
+                    }
 
 #ifdef DEBUG_BIG_TB
                     fprintf(stderr, "Resolved jump to %lx\n", s->jumps_to_resolve[i].pc);
@@ -2671,17 +2711,32 @@ static void do_resolve_jumps(DisasContext *s)
 #ifdef DEBUG_BIG_TB
                 fprintf(stderr, "resolution failed - jump to the TB exit\n");
 #endif
-//                gen_tb_start(s->base.tb);
-                gen_set_label(s->jumps_to_resolve[i].l);
-                gen_jmp_im(s->jumps_to_resolve[i].pc);
-                s->cc_op_dirty = s->jumps_to_resolve[i].cc_op_dirty;
-                s->cc_op = s->jumps_to_resolve[i].cc_op;
-//                gen_update_cc_op1(s);
-                tcg_gen_br(exit_l);
+                if (!s->jmp_opt) {
+    //                gen_tb_start(s->base.tb);
+                    gen_set_label(s->jumps_to_resolve[i].l);
+                    gen_jmp_im(s->jumps_to_resolve[i].pc);
+                    s->cc_op_dirty = s->jumps_to_resolve[i].cc_op_dirty;
+                    s->cc_op = s->jumps_to_resolve[i].cc_op;
+    //                gen_update_cc_op1(s);
+                    tcg_gen_br(exit_l);
+                } else {
+                    TCGOp *prev_op = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].place;
+                    int cur_idx = tcg_ctx->gen_next_op_idx;
+                    TCGOp *cur_op = tcg_ctx->gen_op_buf + tcg_ctx->gen_next_op_idx;
+                    TCGOp *next_op = tcg_ctx->gen_op_buf + prev_op->next;
+                    gen_goto_tb(s, s->cur_exit++, s->jumps_to_resolve[i].pc);
+                    TCGOp *cur_op1 = tcg_ctx->gen_op_buf + tcg_ctx->gen_next_op_idx-1;
+                    next_op->prev = tcg_ctx->gen_next_op_idx-1;
+                    cur_op1->next = prev_op->next;
+                    cur_op->prev = s->jumps_to_resolve[i].place;
+                    prev_op->next = cur_idx;
+                    tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx].prev = cur_idx - 1;
+                    tcg_ctx->gen_op_buf[cur_idx - 1].next = tcg_ctx->gen_next_op_idx;
+                }
             }
         }
-        s->jumps_resolved = true;
     }
+    if(!s->jmp_opt)
     gen_set_label(exit_l);
 }
 #endif
@@ -2774,11 +2829,14 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num,
     gen_update_cc_op(s);
     set_cc_op(s, CC_OP_DYNAMIC);
     if (s->jmp_opt) {
-        s->cur_jmp_exit = s->cur_exit;
-        gen_goto_tb(s, s->cur_exit + tb_num, eip);
-        s->cur_jmp_exit++;
-        if (s->cur_jmp_exit % 2 == 0) {
-            s->cur_exit += 2;
+//        s->cur_jmp_exit = s->cur_exit;
+        gen_goto_tb(s, s->cur_exit++, eip);
+//        s->cur_jmp_exit++;
+//        if (s->cur_jmp_exit % 2 == 0) {
+//            s->cur_exit += 2;
+//        }
+        if (--s->cur_jumps < 0) {
+            gen_eob(s);
         }
 #ifdef ENABLE_BIG_TB
     } else if (!break_tb) {

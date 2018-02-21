@@ -28,7 +28,7 @@
 #define DEBUG_DISAS
 
 #define ENABLE_BIG_TB
-//#define DEBUG_BIG_TB
+#define DEBUG_BIG_TB
 
 /* Page tracking code uses ram addresses in system mode, and virtual
    addresses in userspace mode.  Define tb_page_addr_t to be an appropriate
