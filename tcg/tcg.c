@@ -745,7 +745,7 @@ void tcg_context_init(TCGContext *s)
  */
 TranslationBlock *tcg_tb_alloc(TCGContext *s)
 {
-    uintptr_t align = 1 << 16;//qemu_icache_linesize;
+    uintptr_t align = 1 << 6;//qemu_icache_linesize;
     TranslationBlock *tb;
     void *next;
 
@@ -1594,6 +1594,7 @@ void tcg_dump_ops(TCGContext *s)
         const TCGOpDef *def;
         TCGOpcode c;
         int col = 0;
+        col += qemu_log("%d: ", oi);
 
         op = &s->gen_op_buf[oi];
         c = op->opc;
@@ -1987,6 +1988,7 @@ static void liveness_pass_1(TCGContext *s)
         const TCGOpDef *def = &tcg_op_defs[opc];
 
         oi_prev = op->prev;
+//        fprintf(stderr, "live: %d, prev = %d\n", oi, op->prev);
 
         switch (opc) {
         case INDEX_op_call:

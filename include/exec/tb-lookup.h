@@ -26,8 +26,10 @@ tb_lookup__cpu_state(CPUState *cpu, target_ulong *pc, target_ulong *cs_base,
     CPUArchState *env = (CPUArchState *)cpu->env_ptr;
     TranslationBlock *tb;
     uint32_t hash;
+//    fprintf(stderr, "tb_lookup_state in1: pc = %lx\n", *pc);
 
     cpu_get_tb_cpu_state(env, pc, cs_base, flags);
+//    fprintf(stderr, "tb_lookup_state in2: pc = %lx\n", *pc);
     hash = tb_jmp_cache_hash_func(*pc);
     tb = atomic_rcu_read(&cpu->tb_jmp_cache[hash]);
     if (likely(tb &&

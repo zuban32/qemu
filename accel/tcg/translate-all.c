@@ -1277,6 +1277,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tcg_ctx->tb_cflags = cflags;
 #ifdef ENABLE_BIG_TB
     tb->cur_free_entry = 0;
+    tb->patch_end = false;
 #endif
 
 #ifdef CONFIG_PROFILER
@@ -1290,6 +1291,12 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tcg_ctx->cpu = ENV_GET_CPU(env);
     gen_intermediate_code(cpu, tb);
     tcg_ctx->cpu = NULL;
+//    int oi_prev;
+//    for (int oi = tcg_ctx->gen_op_buf[0].prev; oi != 0; oi = oi_prev) {
+//        TCGOp * const op = &tcg_ctx->gen_op_buf[oi];
+//        oi_prev = op->prev;
+//        fprintf(stderr, "back2: %d, prev = %d\n", oi, oi_prev);
+//    }
 
     trace_translate_block(tb, tb->pc, tb->tc.ptr);
 
@@ -1312,6 +1319,13 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     atomic_set(&prof->interm_time, prof->interm_time + profile_getclock() - ti);
     ti = profile_getclock();
 #endif
+
+//    int oi_prev;
+//    for (int oi = tcg_ctx->gen_op_buf[0].prev; oi != 0; oi = oi_prev) {
+//        TCGOp * const op = &tcg_ctx->gen_op_buf[oi];
+//        oi_prev = op->prev;
+//        fprintf(stderr, "back2: %d, prev = %d\n", oi, oi_prev);
+//    }
 
     /* ??? Overflow could be handled better here.  In particular, we
        don't need to re-do gen_intermediate_code, nor should we re-do

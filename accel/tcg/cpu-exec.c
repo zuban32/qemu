@@ -165,6 +165,7 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
 
     cpu->can_do_io = !use_icount;
     ret = tcg_qemu_tb_exec(env, tb_ptr);
+//    fprintf(stderr, "ret = %lx\n", ret);
     cpu->can_do_io = 1;
     last_tb = (TranslationBlock *)(ret & ~TB_EXIT_MASK);
     tb_exit = ret & TB_EXIT_MASK;
@@ -375,6 +376,7 @@ static inline TranslationBlock *tb_find(CPUState *cpu,
     bool acquired_tb_lock = false;
 
     tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &flags, cf_mask);
+//    fprintf(stderr, "tb_lookup_state: pc = %lx, result: %p\n", pc, tb);
     if (tb == NULL) {
         /* mmap_lock is needed by tb_gen_code, and mmap_lock must be
          * taken outside tb_lock. As system emulation is currently
@@ -603,7 +605,7 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
     tb = (TranslationBlock *)(ret & ~TB_EXIT_MASK);
     *tb_exit = ret & TB_EXIT_MASK;
 #if defined(ENABLE_BIG_TB) && defined(DEBUG_BIG_TB)
-    fprintf(stderr, "tb_exit = %d\n", *tb_exit);
+//    fprintf(stderr, "tb_exit = %d\n", *tb_exit);
 #endif
     if (*tb_exit != TB_EXIT_REQUESTED) {
         *last_tb = tb;

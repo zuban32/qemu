@@ -56,8 +56,13 @@ static inline void gen_tb_end(TranslationBlock *tb, int num_insns)
          * the actual insn count.  */
         tcg_set_insn_param(icount_start_insn_idx, 1, num_insns);
     }
-
+    unsigned short prev = tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx].prev;
     gen_set_label(tcg_ctx->exitreq_label);
+    if (tb->patch_end) {
+//        fprintf(stderr, "patching prev at %d: %d -> %d\n", tcg_ctx->gen_next_op_idx-1,
+//                tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx].prev, prev);
+        tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx-1].prev = prev;
+    }
     tcg_gen_exit_tb((uintptr_t)tb + TB_EXIT_REQUESTED);
 
     /* Terminate the linked list.  */

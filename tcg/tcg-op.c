@@ -62,6 +62,7 @@ static inline TCGOp *tcg_emit_op(TCGOpcode opc)
     op->opc = opc;
     op->prev = pi;
     op->next = ni;
+//    fprintf(stderr, "Op[%d] = {%d, %d}\n", oi, op->prev, op->next);
 
     return op;
 }
