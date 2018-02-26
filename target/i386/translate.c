@@ -2635,6 +2635,21 @@ static void gen_bnd_jmp(DisasContext *s)
     }
 }
 
+static inline void op_insert_after(int place, int start, int end)
+{
+    TCGOp *to = tcg_ctx->gen_op_buf + place;
+    TCGOp *from1 = tcg_ctx->gen_op_buf + start;
+    TCGOp *from2 = tcg_ctx->gen_op_buf + end;
+
+    tcg_ctx->gen_op_buf[from2->next].prev = from1->prev;
+    tcg_ctx->gen_op_buf[from1->prev].next = from2->next;
+
+    from1->prev = place;
+    from2->next = to->next;
+    to->next = start;
+    tcg_ctx->gen_op_buf[to->next].prev = end;
+}
+
 #ifdef ENABLE_BIG_TB
 static void do_resolve_jumps(DisasContext *s)
 {
@@ -2642,6 +2657,7 @@ static void do_resolve_jumps(DisasContext *s)
 //    if(!s->jmp_opt) {
 //        tcg_gen_br(exit_l);
 //    }
+    bool patch_prev;
     if(!s->jumps_resolved) {
         s->jumps_resolved = true;
 #ifdef DEBUG_BIG_TB
@@ -2666,69 +2682,73 @@ static void do_resolve_jumps(DisasContext *s)
 //                    gen_tb_start(s->base.tb);
                     int label_idx = tcg_ctx->gen_next_op_idx - 1;
                     int target_idx = s->instr_gen_code[j].op_idx;
-                    TCGOp *label_op = tcg_ctx->gen_op_buf + label_idx;
-                    TCGOp *target_op = tcg_ctx->gen_op_buf + target_idx;
-                    TCGOp *label_start_op = tcg_ctx->gen_op_buf + label_start_idx;
-                    s->cc_op_dirty = s->jumps_to_resolve[i].cc_op_dirty;
-                    s->cc_op = s->jumps_to_resolve[i].cc_op;
-//                    gen_update_cc_op1(s);
+//                    TCGOp *label_op = tcg_ctx->gen_op_buf + label_idx;
+//                    TCGOp *target_op = tcg_ctx->gen_op_buf + target_idx;
+//                    TCGOp *label_start_op = tcg_ctx->gen_op_buf + label_start_idx;
+//                    s->cc_op_dirty = s->jumps_to_resolve[i].cc_op_dirty;
+//                    s->cc_op = s->jumps_to_resolve[i].cc_op;
                     if (!s->jmp_opt) {
                         tcg_gen_br(exit_l);
                     } else {
                         tcg_gen_br(l);
                     }
 
+                    op_insert_after(target_idx, label_idx, label_idx);
 //                    fprintf(stderr, "Inserting label (%d) between %d and %d\n",
 //                            label_idx, target_op->prev, target_idx);
 
 //                    fprintf(stderr, "Instr[%d].next: %d -> %d\n",
 //                            target_op->prev, tcg_ctx->gen_op_buf[target_op->prev].next, label_start_idx);
-                    tcg_ctx->gen_op_buf[target_op->prev].next = label_start_idx;
+//                    tcg_ctx->gen_op_buf[target_op->prev].next = label_start_idx;
 //                    fprintf(stderr, "Instr[%d].next: %d -> %d\n",
 //                            label_start_op->prev,tcg_ctx->gen_op_buf[label_start_op->prev].next, label_op->next);
-                    tcg_ctx->gen_op_buf[label_start_op->prev].next = label_op->next;
+//                    tcg_ctx->gen_op_buf[label_start_op->prev].next = label_op->next;
 
 //                    fprintf(stderr, "Instr[%d].prev: %d -> %d\n",
 //                            label_op->next, tcg_ctx->gen_op_buf[label_op->next].prev, label_start_op->prev);
-                    tcg_ctx->gen_op_buf[label_op->next].prev = label_start_op->prev;
+//                    tcg_ctx->gen_op_buf[label_op->next].prev = label_start_op->prev;
+//                    tcg_ctx->gen_op_buf[label_op->next].patch_prev = true;
 //                    fprintf(stderr, "Instr[%d].prev: %d -> %d\n",
 //                            label_start_idx, label_start_op->prev, target_op->prev);
-                    label_start_op->prev = target_op->prev;
+//                    label_start_op->prev = target_op->prev;
 //                    fprintf(stderr, "Instr[%d].next: %d -> %d\n",
 //                            label_idx, label_op->next, target_idx);
-                    label_op->next = target_idx;
+//                    label_op->next = target_idx;
 //                    fprintf(stderr, "Instr[%d].prev: %d -> %d\n", target_idx,
 //                            target_op->prev, label_idx);
-                    target_op->prev = label_idx;
+//                    target_op->prev = label_idx;
 
                     if (s->jmp_opt) {
-                        TCGOp *prev_op = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].place;
+//                        TCGOp *prev_op = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].place;
                         int cur_idx = tcg_ctx->gen_next_op_idx-1;
-                        TCGOp *cur_op = tcg_ctx->gen_op_buf + tcg_ctx->gen_next_op_idx-1;
-                        TCGOp *next_op = tcg_ctx->gen_op_buf + prev_op->next;
+//                        TCGOp *cur_op = tcg_ctx->gen_op_buf + tcg_ctx->gen_next_op_idx-1;
+//                        TCGOp *next_op = tcg_ctx->gen_op_buf + prev_op->next;
+
+                        op_insert_after(s->jumps_to_resolve[i].place, cur_idx, cur_idx);
 
 //                        fprintf(stderr, "Inserting br (%d) between %d and %d\n",
 //                                cur_idx, s->jumps_to_resolve[i].place, prev_op->next);
-
+//
 //                        fprintf(stderr, "Instr[%d].prev: %d -> %d\n",
 //                                cur_op->next, tcg_ctx->gen_op_buf[cur_op->next].prev, cur_op->prev);
-                        tcg_ctx->gen_op_buf[cur_op->next].prev = cur_op->prev;
+//                        tcg_ctx->gen_op_buf[cur_op->next].prev = cur_op->prev;
+//                        tcg_ctx->gen_op_buf[cur_op->next].patch_prev = true;
 //                        fprintf(stderr, "Instr[%d].next: %d -> %d\n",
 //                                cur_op->prev, tcg_ctx->gen_op_buf[cur_op->prev].next, cur_op->next);
-                        tcg_ctx->gen_op_buf[cur_op->prev].next = cur_op->next;
+//                        tcg_ctx->gen_op_buf[cur_op->prev].next = cur_op->next;
 
 //                        fprintf(stderr, "Instr[%d].prev: %d -> %d\n",
 //                                prev_op->next, next_op->prev, cur_idx);
-                        next_op->prev = cur_idx;
+//                        next_op->prev = cur_idx;
 //                        fprintf(stderr, "Instr[%d].next: %d -> %d\n",
 //                                cur_idx, cur_op->next, prev_op->next);
-                        cur_op->next = prev_op->next;
+//                        cur_op->next = prev_op->next;
 //                        fprintf(stderr, "Instr[%d].prev: %d -> %d\n",
 //                                cur_idx, cur_op->prev, s->jumps_to_resolve[i].place);
-                        cur_op->prev = s->jumps_to_resolve[i].place;
+//                        cur_op->prev = s->jumps_to_resolve[i].place;
 //                        fprintf(stderr, "Instr[%d].next: %d -> %d\n",
 //                                s->jumps_to_resolve[i].place, prev_op->next, cur_idx);
-                        prev_op->next = cur_idx;
+//                        prev_op->next = cur_idx;
                     } else {
                         tcg_ctx->gen_next_op_idx--;
                     }
@@ -2741,6 +2761,7 @@ static void do_resolve_jumps(DisasContext *s)
                     break;
                 }
             }
+            patch_prev = false;
             if (!found) {
 #ifdef DEBUG_BIG_TB
                 fprintf(stderr, "resolution failed - jump to the TB exit\n");
@@ -2754,19 +2775,41 @@ static void do_resolve_jumps(DisasContext *s)
     //                gen_update_cc_op1(s);
                     tcg_gen_br(exit_l);
                 } else {
-                    TCGOp *prev_op = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].place;
+//                    TCGOp *prev_op = tcg_ctx->gen_op_buf + s->jumps_to_resolve[i].place;
                     int cur_idx = tcg_ctx->gen_next_op_idx;
                     TCGOp *cur_op = tcg_ctx->gen_op_buf + tcg_ctx->gen_next_op_idx;
-                    TCGOp *next_op = tcg_ctx->gen_op_buf + prev_op->next;
-//                    fprintf(stderr, "gen_goto_tb %d, %lx\n", s->cur_e, s->jumps_to_resolve[i].pc);
+                    int prev = cur_op->prev;
+//                    TCGOp *next_op = tcg_ctx->gen_op_buf + prev_op->next;
+//                    fprintf(stderr, "Inserting opt br (%d) between %d and %d\n",
+//                            cur_idx, s->jumps_to_resolve[i].place, prev_op->next);
                     gen_goto_tb(s, s->jumps_to_resolve[i].exit, s->jumps_to_resolve[i].pc);
-                    TCGOp *cur_op1 = tcg_ctx->gen_op_buf + tcg_ctx->gen_next_op_idx-1;
-                    next_op->prev = tcg_ctx->gen_next_op_idx-1;
-                    cur_op1->next = prev_op->next;
-                    cur_op->prev = s->jumps_to_resolve[i].place;
-                    prev_op->next = cur_idx;
-                    tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx].prev = cur_idx - 1;
-                    tcg_ctx->gen_op_buf[cur_idx - 1].next = tcg_ctx->gen_next_op_idx;
+                    if (patch_prev) {
+                        cur_op->prev = prev;
+                    }
+                    op_insert_after(s->jumps_to_resolve[i].place, cur_idx, tcg_ctx->gen_next_op_idx-1);
+
+//                    TCGOp *cur_op1 = tcg_ctx->gen_op_buf + tcg_ctx->gen_next_op_idx-1;
+//                    fprintf(stderr, "Instr[%d].prev: %d -> %d\n",
+//                            cur_op1->next, tcg_ctx->gen_op_buf[cur_op1->next].prev, cur_op->prev);
+//                    tcg_ctx->gen_op_buf[cur_op1->next].prev = cur_op->prev;
+//                    tcg_ctx->gen_op_buf[cur_op1->next].patch_prev = true;
+
+//                    fprintf(stderr, "Instr[%d].next: %d -> %d\n",
+//                            cur_op->prev, tcg_ctx->gen_op_buf[cur_op->prev].next, cur_op1->next);
+//                    tcg_ctx->gen_op_buf[cur_op->prev].next = cur_op1->next;
+
+//                    fprintf(stderr, "Instr[%d].prev: %d -> %d\n",
+//                            prev_op->next, next_op->prev, tcg_ctx->gen_next_op_idx-1);
+//                    next_op->prev = tcg_ctx->gen_next_op_idx-1;
+//                    fprintf(stderr, "Instr[%d].next: %d -> %d\n",
+//                            tcg_ctx->gen_next_op_idx-1, cur_op1->next, prev_op->next);
+//                    cur_op1->next = prev_op->next;
+//                    fprintf(stderr, "Instr[%d].prev: %d -> %d\n",
+//                            cur_idx, cur_op->prev, s->jumps_to_resolve[i].place);
+//                    cur_op->prev = s->jumps_to_resolve[i].place;
+//                    fprintf(stderr, "Instr[%d].next: %d -> %d\n",
+//                            s->jumps_to_resolve[i].place, prev_op->next, cur_idx);
+//                    prev_op->next = cur_idx;
                 }
             }
         }
