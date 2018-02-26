@@ -62,6 +62,10 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
     /* Reset the temp count so that we can identify leaks */
     tcg_clear_temp_count();
 
+    for(int i = 0; i < OPC_BUF_SIZE; i++) {
+        tcg_ctx->gen_op_buf[i].patch_prev = 0;
+    }
+
     /* Start translating.  */
     gen_tb_start(db->tb);
     ops->tb_start(db, cpu);
