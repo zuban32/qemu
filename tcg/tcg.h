@@ -579,7 +579,7 @@ typedef struct TCGOp {
     /* The number of out and in parameter for a call.  */
     unsigned calli  : 4;        /* 12 */
     unsigned callo  : 2;        /* 14 */
-    unsigned patch_prev       : 2;        /* 16 */
+    unsigned        : 2;        /* 16 */
 
     /* Index of the prev/next op, or 0 for the end of the list.  */
     unsigned prev   : 16;       /* 32 */

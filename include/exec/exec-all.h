@@ -322,11 +322,7 @@ struct tb_tc {
 struct TranslationBlock {
     target_ulong pc;   /* simulated PC corresponding to this block (EIP + CS base) */
 #ifdef ENABLE_BIG_TB
-#define MAX_INNER_JUMPS 10
-    target_ulong mid_entries[MAX_INNER_JUMPS];
-    uint8_t *gen_mid_entries[MAX_INNER_JUMPS];
-    unsigned instr_num_mid_entries[MAX_INNER_JUMPS];
-    int cur_free_entry;
+#define MAX_INNER_JUMPS 2
 #else
 #define MAX_INNER_JUMPS 0
 #endif
@@ -384,6 +380,9 @@ struct TranslationBlock {
      */
     uintptr_t jmp_list_next[2*(MAX_INNER_JUMPS+1)];
     uintptr_t jmp_list_first;
+
+    target_ulong min_pc, max_pc;
+
     bool patch_end;
 };
 

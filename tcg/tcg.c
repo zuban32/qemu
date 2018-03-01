@@ -1988,7 +1988,6 @@ static void liveness_pass_1(TCGContext *s)
         const TCGOpDef *def = &tcg_op_defs[opc];
 
         oi_prev = op->prev;
-//        fprintf(stderr, "live: %d, prev = %d\n", oi, op->prev);
 
         switch (opc) {
         case INDEX_op_call:

@@ -58,16 +58,9 @@ static inline TCGOp *tcg_emit_op(TCGOpcode opc)
     ctx->gen_op_buf[0].prev = oi;
     ctx->gen_next_op_idx = ni;
 
-    int prev = op->prev;
-    int patch_prev = op->patch_prev;
-
     memset(op, 0, offsetof(TCGOp, args));
     op->opc = opc;
-    if (patch_prev) {
-        op->prev = prev;
-    } else {
-        op->prev = pi;
-    }
+    op->prev = pi;
     op->next = ni;
 
     return op;

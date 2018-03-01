@@ -1203,8 +1203,7 @@ static inline void gen_repz_ ## op(DisasContext *s, TCGMemOp ot,              \
        before rep string_insn */                                              \
     if (s->repz_opt)                                                          \
         gen_op_jz_ecx(s->aflag, l2);                                          \
-    gen_jmp(s, cur_eip);                                                      \
-    gen_eob(s);\
+    gen_jmp_tb(s, cur_eip,0);                                                      \
 }
 
 #define GEN_REPZ2(op)                                                         \
@@ -1222,8 +1221,7 @@ static inline void gen_repz_ ## op(DisasContext *s, TCGMemOp ot,              \
     gen_jcc1(s, (JCC_Z << 1) | (nz ^ 1), l2);                                 \
     if (s->repz_opt)                                                          \
         gen_op_jz_ecx(s->aflag, l2);                                          \
-    gen_jmp(s, cur_eip);                                                      \
-    gen_eob(s);\
+    gen_jmp_tb(s, cur_eip, 0);                                                      \
 }
 
 GEN_REPZ(movs)
@@ -2245,7 +2243,9 @@ static inline void gen_jcc(DisasContext *s, int b,
 
     if (s->jmp_opt) {
         l1 = gen_new_label();
-        if (--s->cur_jumps < 0 || !use_goto_tb(s, val)) {
+        s->cur_jumps--;
+//        fprintf(stderr, "cur_jumps = %d\n", s->cur_jumps);
+        if (s->cur_jumps < 0 || !use_goto_tb(s, val)) {
             gen_jcc1(s, b, l1);
 
             gen_goto_tb(s, s->cur_exit++, next_eip);
@@ -2635,20 +2635,31 @@ static void gen_bnd_jmp(DisasContext *s)
     }
 }
 
-static inline void op_insert_after(int place, int start, int end)
+static inline int op_insert_after(int place, int start, int end, int patch_prev)
 {
     TCGOp *to = tcg_ctx->gen_op_buf + place;
     TCGOp *from1 = tcg_ctx->gen_op_buf + start;
     TCGOp *from2 = tcg_ctx->gen_op_buf + end;
 
+//    fprintf(stderr, "Inserting [%d, %d] between %d and %d\n", start, end, place, to->next);
+
+    if (patch_prev >= 0) {
+//        fprintf(stderr, "Patching prev at [%d]: %d -> %d\n", start, from1->prev, patch_prev);
+        from1->prev = patch_prev;
+        tcg_ctx->gen_op_buf[patch_prev].next = start;
+    }
+    int result = from1->prev;
+
     tcg_ctx->gen_op_buf[from2->next].prev = from1->prev;
-    tcg_ctx->gen_op_buf[from2->next].patch_prev = true;
+//    fprintf(stderr, "Op[%d].next: %d -> %d\n", from1->prev, tcg_ctx->gen_op_buf[from1->prev].next, from2->next);
     tcg_ctx->gen_op_buf[from1->prev].next = from2->next;
 
     from1->prev = place;
     from2->next = to->next;
     tcg_ctx->gen_op_buf[to->next].prev = end;
     to->next = start;
+//    fprintf(stderr, "Returning %d for patching\n", result);
+    return result;
 }
 
 #ifdef ENABLE_BIG_TB
@@ -2658,9 +2669,9 @@ static void do_resolve_jumps(DisasContext *s)
     if(!s->jmp_opt) {
         tcg_gen_br(exit_l);
     }
-//    bool patch_prev;
     if(!s->jumps_resolved) {
         s->jumps_resolved = true;
+        int patch_prev = -1;
 #ifdef DEBUG_BIG_TB
         fprintf(stderr, "Resolving %d jumps...\n", s->cur_jump_to_resolve);
 #endif
@@ -2668,7 +2679,7 @@ static void do_resolve_jumps(DisasContext *s)
 #ifdef DEBUG_BIG_TB
             fprintf(stderr, "Resolving jump to %lx...\n", s->jumps_to_resolve[i].pc);
 #endif
-//            s->base.tb->patch_end = true;
+            s->base.tb->patch_end = true;
             bool found = false;
             for(int j = 0; j < s->cur_instr_code; j++) {
                 if (s->instr_gen_code[j].pc == s->jumps_to_resolve[i].pc) {
@@ -2689,12 +2700,11 @@ static void do_resolve_jumps(DisasContext *s)
                         tcg_gen_br(l);
                     }
 
-                    op_insert_after(target_idx, label_idx, label_idx);
+                    patch_prev = op_insert_after(target_idx, label_idx, label_idx, patch_prev);
 
                     if (s->jmp_opt) {
                         int cur_idx = tcg_ctx->gen_next_op_idx-1;
-
-                        op_insert_after(s->jumps_to_resolve[i].place, cur_idx, cur_idx);
+                        patch_prev = op_insert_after(s->jumps_to_resolve[i].place, cur_idx, cur_idx, -1);
                     } else {
                         tcg_ctx->gen_next_op_idx--;
                     }
@@ -2707,7 +2717,6 @@ static void do_resolve_jumps(DisasContext *s)
                     break;
                 }
             }
-//            patch_prev = false;
             if (!found) {
 #ifdef DEBUG_BIG_TB
                 fprintf(stderr, "resolution failed - jump to the TB exit\n");
@@ -2722,7 +2731,7 @@ static void do_resolve_jumps(DisasContext *s)
                 } else {
                     int cur_idx = tcg_ctx->gen_next_op_idx;
                     gen_goto_tb(s, s->jumps_to_resolve[i].exit, s->jumps_to_resolve[i].pc);
-                    op_insert_after(s->jumps_to_resolve[i].place, cur_idx, tcg_ctx->gen_next_op_idx-1);
+                    patch_prev = op_insert_after(s->jumps_to_resolve[i].place, cur_idx, tcg_ctx->gen_next_op_idx-1, patch_prev);
                 }
             }
         }
@@ -2751,7 +2760,6 @@ do_gen_eob_worker(DisasContext *s, bool inhibit, bool recheck_tf, bool jr)
 #ifdef ENABLE_BIG_TB
     CCOp tmp1 = s->cc_op;
     bool tmp2 = s->cc_op_dirty;
-//    do_resolve_jumps(s);
     s->cc_op = tmp1;
     s->cc_op_dirty = tmp2;
 #endif
@@ -2820,22 +2828,41 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
     gen_update_cc_op(s);
     set_cc_op(s, CC_OP_DYNAMIC);
     if (s->jmp_opt) {
-//        s->cur_jmp_exit = s->cur_exit;
-//        s->cur_jmp_exit++;
-        gen_goto_tb(s, s->cur_exit++, eip);
-//        if (s->cur_jmp_exit % 2 == 0) {
-//            s->cur_exit += 2;
-//        }
-        if (--s->cur_jumps < 0) {
-//            gen_goto_tb(s, s->cur_exit++, eip);
+        if (s->pc > s->base.tb->max_pc) {
+            s->base.tb->max_pc = s->pc;
+        }
+        if (s->pc < s->base.tb->min_pc) {
+            s->base.tb->min_pc = s->pc;
+        }
+        s->cur_jumps--;
+        if (s->cur_jumps < 0 || !use_goto_tb(s, s->cs_base+eip)) {
+            gen_goto_tb(s, s->cur_exit++, eip);
             gen_eob(s);
+        } else if (eip != s->base.pc_next - s->cs_base && !tb_num) {
+            s->base.pc_next = eip + s->cs_base;
+            s->pc = eip + s->cs_base;
+
+            if (s->pc > s->base.tb->max_pc) {
+                s->base.tb->max_pc = s->pc;
+            }
+            if (s->pc < s->base.tb->min_pc) {
+                s->base.tb->min_pc = s->pc;
+            }
         } else {
-//            s->jumps_to_resolve[s->cur_jump_to_resolve].place = tcg_ctx->gen_next_op_idx;
-//            s->jumps_to_resolve[s->cur_jump_to_resolve++].pc = eip;
+            // case of "repz <op>" instruction needs jumps resolution instead
+            s->jumps_to_resolve[s->cur_jump_to_resolve].place = tcg_ctx->gen_next_op_idx-1;
+            s->jumps_to_resolve[s->cur_jump_to_resolve].pc = eip;
+            s->jumps_to_resolve[s->cur_jump_to_resolve++].exit = s->cur_exit++;
         }
     } else {
+        s->cur_jumps--;
         gen_jmp_im(eip);
-        gen_eob(s);
+        if (s->cur_jumps < 0 || tb_num || eip == s->pc || !use_goto_tb(s, eip)) {
+            gen_eob(s);
+        } else {
+            s->base.pc_next = eip;
+            s->pc = eip;
+        }
     }
 }
 
@@ -8732,7 +8759,6 @@ static void i386_tr_insn_start(DisasContextBase *dcbase, CPUState *cpu)
 #ifdef ENABLE_BIG_TB
 //    if(dc->met_br) {
 //        gen_update_cc_op(dc);
-//        fprintf(stderr, "gen_jmp_im start\n");
 //        gen_jmp_im(dcbase->pc_next - dc->cs_base);
 //        dc->met_br = false;
 //    }
@@ -8769,6 +8795,13 @@ static void i386_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
 
     target_ulong pc_next = disas_insn(dc, cpu);
 
+    if (dc->pc > dcbase->tb->max_pc) {
+        dcbase->tb->max_pc = dc->pc;
+    }
+    if (dc->pc < dcbase->tb->min_pc) {
+        dcbase->tb->min_pc = dc->pc;
+    }
+
     if (dc->tf || (dc->base.tb->flags & HF_INHIBIT_IRQ_MASK)) {
         /* if single step mode, we generate only one instruction and
            generate an exception */
@@ -8788,7 +8821,9 @@ static void i386_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
            because an exception hasn't stopped this code.
          */
         dc->base.is_jmp = DISAS_TOO_MANY;
-    } else if ((pc_next - dc->base.pc_first) >= (TARGET_PAGE_SIZE - 32)) {
+    } else if ((dc->base.tb->max_pc - dc->base.tb->min_pc) >= (TARGET_PAGE_SIZE - 32)) {
+//        fprintf(stderr, "crossed the page: %lx -> %lx; size = %d\n",
+//                dc->base.pc_first, pc_next, TARGET_PAGE_SIZE-32);
         dc->base.is_jmp = DISAS_TOO_MANY;
     }
 
@@ -8800,11 +8835,18 @@ static void i386_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
     DisasContext *dc = container_of(dcbase, DisasContext, base);
 
     if (dc->base.is_jmp == DISAS_TOO_MANY) {
+//        fprintf(stderr, "too many -> stop\n");
         gen_jmp_im(dc->base.pc_next - dc->cs_base);
 //        dc->met_exc = true;
         gen_eob(dc);
     }
     do_resolve_jumps(dc);
+    if (dc->pc > dcbase->tb->max_pc) {
+        dcbase->tb->max_pc = dc->pc;
+    }
+    if (dc->pc < dcbase->tb->min_pc) {
+        dcbase->tb->min_pc = dc->pc;
+    }
 }
 
 static void i386_tr_disas_log(const DisasContextBase *dcbase,

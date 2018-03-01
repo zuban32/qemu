@@ -14,9 +14,9 @@ static inline void gen_tb_start(TranslationBlock *tb)
     fprintf(stderr, "TB start: %lx\n", (uintptr_t)tb);
 #endif
 
-//    if (!tcg_ctx->exitreq_label) {
-    tcg_ctx->exitreq_label = gen_new_label();
-//    }
+    if (!tcg_ctx->exitreq_label) {
+        tcg_ctx->exitreq_label = gen_new_label();
+    }
 
     if (tb_cflags(tb) & CF_USE_ICOUNT) {
         count = tcg_temp_local_new_i32();
@@ -59,8 +59,6 @@ static inline void gen_tb_end(TranslationBlock *tb, int num_insns)
     unsigned short prev = tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx].prev;
     gen_set_label(tcg_ctx->exitreq_label);
     if (tb->patch_end) {
-//        fprintf(stderr, "patching prev at %d: %d -> %d\n", tcg_ctx->gen_next_op_idx-1,
-//                tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx].prev, prev);
         tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx-1].prev = prev;
     }
     tcg_gen_exit_tb((uintptr_t)tb + TB_EXIT_REQUESTED);

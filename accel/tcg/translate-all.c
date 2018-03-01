@@ -1270,13 +1270,14 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     gen_code_buf = tcg_ctx->code_gen_ptr;
     tb->tc.ptr = gen_code_buf;
     tb->pc = pc;
+    tb->min_pc = pc;
+    tb->max_pc = 0;
     tb->cs_base = cs_base;
     tb->flags = flags;
     tb->cflags = cflags;
     tb->trace_vcpu_dstate = *cpu->trace_dstate;
     tcg_ctx->tb_cflags = cflags;
 #ifdef ENABLE_BIG_TB
-    tb->cur_free_entry = 0;
     tb->patch_end = false;
 #endif
 
@@ -1291,12 +1292,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tcg_ctx->cpu = ENV_GET_CPU(env);
     gen_intermediate_code(cpu, tb);
     tcg_ctx->cpu = NULL;
-//    int oi_prev;
-//    for (int oi = tcg_ctx->gen_op_buf[0].prev; oi != 0; oi = oi_prev) {
-//        TCGOp * const op = &tcg_ctx->gen_op_buf[oi];
-//        oi_prev = op->prev;
-//        fprintf(stderr, "back2: %d, prev = %d\n", oi, oi_prev);
-//    }
 
     trace_translate_block(tb, tb->pc, tb->tc.ptr);
 
@@ -1319,13 +1314,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     atomic_set(&prof->interm_time, prof->interm_time + profile_getclock() - ti);
     ti = profile_getclock();
 #endif
-
-//    int oi_prev;
-//    for (int oi = tcg_ctx->gen_op_buf[0].prev; oi != 0; oi = oi_prev) {
-//        TCGOp * const op = &tcg_ctx->gen_op_buf[oi];
-//        oi_prev = op->prev;
-//        fprintf(stderr, "back2: %d, prev = %d\n", oi, oi_prev);
-//    }
 
     /* ??? Overflow could be handled better here.  In particular, we
        don't need to re-do gen_intermediate_code, nor should we re-do
@@ -1388,8 +1376,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     /* init jump list */
     assert(((uintptr_t)tb & TB_EXIT_MASK) == 0);
     tb->jmp_list_first = (uintptr_t)tb | TB_EXIT_IDXMAX;
-//    tb->jmp_list_next[0] = (uintptr_t)NULL;
-//    tb->jmp_list_next[1] = (uintptr_t)NULL;
 
     for(int i = 0; i < 2 * (MAX_INNER_JUMPS + 1); i++) {
         tb->jmp_list_next[i] = (uintptr_t)NULL;
@@ -1397,16 +1383,8 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
             tb_reset_jump(tb, i);
     }
 
-    /* init original jump addresses wich has been set during tcg_gen_code() */
-//    if (tb->jmp_reset_offset[0] != TB_JMP_RESET_OFFSET_INVALID) {
-//        tb_reset_jump(tb, 0);
-//    }
-//    if (tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
-//        tb_reset_jump(tb, 1);
-//    }
-
     /* check next page if needed */
-    virt_page2 = (pc + tb->size - 1) & TARGET_PAGE_MASK;
+    virt_page2 = (tb->min_pc + tb->size - 1) & TARGET_PAGE_MASK;
     phys_page2 = -1;
     if ((pc & TARGET_PAGE_MASK) != virt_page2) {
         phys_page2 = get_page_addr_code(env, virt_page2);

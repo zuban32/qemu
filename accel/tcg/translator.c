@@ -62,10 +62,7 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
     /* Reset the temp count so that we can identify leaks */
     tcg_clear_temp_count();
 
-    for(int i = 0; i < OPC_BUF_SIZE; i++) {
-        tcg_ctx->gen_op_buf[i].patch_prev = 0;
-    }
-
+    tcg_ctx->exitreq_label = NULL;
     /* Start translating.  */
     gen_tb_start(db->tb);
     ops->tb_start(db, cpu);
@@ -126,7 +123,7 @@ void translator_loop(const TranslatorOps *ops, DisasContextBase *db,
     gen_tb_end(db->tb, db->num_insns);
 
     /* The disas_log hook may use these values rather than recompute.  */
-    db->tb->size = db->pc_next - db->pc_first;
+    db->tb->size = db->tb->max_pc - db->tb->min_pc;
     db->tb->icount = db->num_insns;
 
 #ifdef DEBUG_DISAS
