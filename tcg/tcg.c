@@ -1588,13 +1588,20 @@ void tcg_dump_ops(TCGContext *s)
     char buf[128];
     TCGOp *op;
     int oi;
+    int cur_bb = 0;
 
     for (oi = s->gen_op_buf[0].next; oi != 0; oi = op->next) {
         int i, k, nb_oargs, nb_iargs, nb_cargs;
         const TCGOpDef *def;
         TCGOpcode c;
         int col = 0;
+
         col += qemu_log("%d: ", oi);
+
+        if (s->basic_blocks && cur_bb < s->bb_count
+                && s->basic_blocks[cur_bb].first_insn == oi) {
+            col += qemu_log(" --- BB %d begin --- \n", cur_bb);
+        }
 
         op = &s->gen_op_buf[oi];
         c = op->opc;
@@ -1740,6 +1747,24 @@ void tcg_dump_ops(TCGContext *s)
             }
         }
         qemu_log("\n");
+        if(s->basic_blocks && cur_bb < s->bb_count
+                && s->basic_blocks[cur_bb].last_insn == oi) {
+            qemu_log(" --- BB %d end --- \n", cur_bb);
+            cur_bb++;
+        }
+    }
+    if (s->basic_blocks) {
+        for (cur_bb = 0; cur_bb < s->bb_count; cur_bb++) {
+            for (int i = 0; i < 2; i++) {
+                if (s->basic_blocks[cur_bb].succ[i].dest) {
+                    qemu_log(" BB%d -> BB%ld\n", cur_bb,
+                            s->basic_blocks[cur_bb].succ[i].dest - s->basic_blocks);
+                }
+                if (s->basic_blocks[cur_bb].succ[i].edge_is_tb_exit) {
+                    qemu_log(" BB%d -> EXIT\n", cur_bb);
+                }
+            }
+        }
     }
 }
 
@@ -2348,6 +2373,149 @@ static bool liveness_pass_2(TCGContext *s)
     }
 
     return changes;
+}
+
+static void tcg_build_cfg(TCGContext *s)
+{
+//    qemu_log("Building CFG for cur TB...\n");
+    int oi, oi_next;
+    int bb_count = 0;
+    int bb_index = 0;
+    int succ_count = 0;
+    int cur_insn_is_bb_start = 1;
+    int next_insn_is_bb_start;
+    int label_to_bb[512];
+    TCGEdge *edge;
+
+    for (oi = s->gen_op_buf[0].next; oi != 0; oi = oi_next) {
+//        fprintf(stderr, "op %d", oi);
+//        int i, nb_iargs, nb_oargs;
+        TCGOp * const op = &s->gen_op_buf[oi];
+        TCGOpcode opc = op->opc;
+//        const TCGOpDef *def = &tcg_op_defs[opc];
+
+        oi_next = op->next;
+        next_insn_is_bb_start = 0;
+
+        switch(opc) {
+        case INDEX_op_set_label:
+//            fprintf(stderr, "Label num = %x\n", arg_label(op->args[0])->id);
+            label_to_bb[arg_label(op->args[0])->id] = bb_count;
+            cur_insn_is_bb_start = 1;
+            break;
+        case INDEX_op_brcond_i32:
+#if TCG_TARGET_REG_BITS == 32
+        case INDEX_op_brcond2_i32:
+#else
+        case INDEX_op_brcond_i64:
+#endif
+        case INDEX_op_br:
+//        case INDEX_op_jmp:
+        case INDEX_op_goto_tb:
+        case INDEX_op_exit_tb:
+        case INDEX_op_goto_ptr:
+            next_insn_is_bb_start = 1;
+            /* fallthrough */
+        default:
+            break;
+        }
+        if (cur_insn_is_bb_start) {
+            bb_count++;
+//            fprintf(stderr, " bb start");
+        }
+        if (next_insn_is_bb_start) {
+//            fprintf(stderr, " bb end");
+        }
+//        fprintf(stderr, "\n");
+        cur_insn_is_bb_start = next_insn_is_bb_start;
+    }
+
+    if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP))) {
+        qemu_log("bb_count: %d\n", bb_count);
+    }
+
+    if (bb_count > 2) {
+        s->tb_with_several_bb++;
+    }
+
+//    fprintf(stderr, "build cfg mid\n");
+
+    s->bb_count = bb_count;
+
+    s->basic_blocks = tcg_malloc(bb_count * sizeof(TCGBasicBlock));
+    memset(s->basic_blocks, 0, bb_count * sizeof(TCGBasicBlock));
+
+    cur_insn_is_bb_start = 1;
+    /* Build CFG */
+    for (oi = s->gen_op_buf[0].next; oi != 0; oi = oi_next) {
+//        int i, nb_iargs, nb_oargs;
+        TCGOp * const op = &s->gen_op_buf[oi];
+        TCGOpcode opc = op->opc;
+        const TCGOpDef *def = &tcg_op_defs[opc];
+
+        oi_next = op->next;
+        next_insn_is_bb_start = 0;
+        if (cur_insn_is_bb_start) {
+            if (bb_index > 0) {
+                s->basic_blocks[bb_index - 1].last_insn = op->prev;
+//                s->basic_blocks[bb_index - 1].last_arg = args - gen_opparam_buf - 1;
+            }
+            s->basic_blocks[bb_index].first_insn = oi;
+//            s->basic_blocks[bb_index].first_arg = args - gen_opparam_buf;
+            succ_count = 0;
+            bb_index++;
+        }
+//        fprintf(stderr, "op %d\n", oi);
+        switch (opc) {
+        case INDEX_op_call:
+            break;
+        case INDEX_op_set_label:
+            if (!cur_insn_is_bb_start) {
+                s->basic_blocks[bb_index].first_insn = oi;
+//                s->basic_blocks[bb_index].first_arg = args - gen_opparam_buf;
+                if (bb_index > 0) {
+                    s->basic_blocks[bb_index - 1].last_insn = op->prev;
+//                    s->basic_blocks[bb_index - 1].last_arg = args - gen_opparam_buf - 1;
+                    if (   s->gen_op_buf[op->prev].opc != INDEX_op_br
+                        && s->gen_op_buf[op->prev].opc != INDEX_op_exit_tb
+                        && s->gen_op_buf[op->prev].opc != INDEX_op_goto_ptr) {
+                        s->basic_blocks[bb_index - 1].succ[succ_count++].dest =
+                            &s->basic_blocks[bb_index];
+                    }
+                }
+                succ_count = 0;
+                bb_index++;
+            }
+            break;
+        case INDEX_op_brcond_i32:
+#if TCG_TARGET_REG_BITS == 32
+        case INDEX_op_brcond2_i32:
+#else
+        case INDEX_op_brcond_i64:
+#endif
+        case INDEX_op_goto_tb:
+            s->basic_blocks[bb_index - 1].succ[succ_count++].dest =
+                &s->basic_blocks[bb_index];
+            /* fallthrough */
+        case INDEX_op_br:
+        case INDEX_op_goto_ptr:
+        case INDEX_op_exit_tb:
+            edge = &s->basic_blocks[bb_index - 1].succ[succ_count++];
+            if (opc == INDEX_op_goto_tb || opc == INDEX_op_exit_tb
+                    || opc == INDEX_op_goto_ptr) {
+                edge->edge_is_tb_exit = 1;
+            } else {
+                edge->dest =
+                    &s->basic_blocks[label_to_bb[arg_label(op->args[def->nb_args - 1])->id]];
+            }
+            next_insn_is_bb_start = 1;
+            /* fallthrough */
+        default:
+            break;
+        }
+        cur_insn_is_bb_start = next_insn_is_bb_start;
+    }
+    assert (bb_index == bb_count);
 }
 
 #ifdef CONFIG_DEBUG_TCG
@@ -3158,9 +3326,9 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
     if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP)
                  && qemu_log_in_addr_range(tb->pc))) {
         qemu_log_lock();
-        qemu_log("OP:\n");
-        tcg_dump_ops(s);
-        qemu_log("\n");
+//        qemu_log("OP:\n");
+//        tcg_dump_ops(s);
+//        qemu_log("\n");
         qemu_log_unlock();
     }
 #endif
@@ -3177,7 +3345,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
     atomic_set(&prof->opt_time, prof->opt_time + profile_getclock());
     atomic_set(&prof->la_time, prof->la_time - profile_getclock());
 #endif
-
+    tcg_build_cfg(s);
     liveness_pass_1(s);
 
     if (s->nb_indirects > 0) {

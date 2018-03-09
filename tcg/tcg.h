@@ -519,6 +519,23 @@ static inline TCGCond tcg_high_cond(TCGCond c)
     }
 }
 
+typedef struct TCGBasicBlock TCGBasicBlock;
+typedef struct TCGEdge TCGEdge;
+
+struct TCGEdge {
+    int edge_is_tb_exit;
+    TCGBasicBlock *dest;
+};
+
+struct TCGBasicBlock {
+    int first_insn;
+    int first_arg;
+    int last_insn;
+    int last_arg;
+    int pred_count;
+    TCGEdge succ[2];
+};
+
 typedef enum TCGTempVal {
     TEMP_VAL_DEAD,
     TEMP_VAL_REG,
@@ -691,6 +708,10 @@ struct TCGContext {
 
     uint16_t gen_insn_end_off[TCG_MAX_INSNS];
     target_ulong gen_insn_data[TCG_MAX_INSNS][TARGET_INSN_START_WORDS];
+
+    TCGBasicBlock *basic_blocks;
+    int tb_with_several_bb;
+    int bb_count;
 };
 
 extern TCGContext tcg_init_ctx;
