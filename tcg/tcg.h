@@ -187,6 +187,14 @@ typedef enum TCGOpcode {
 #define tcg_regset_set_reg(d, r)   ((d) |= (TCGRegSet)1 << (r))
 #define tcg_regset_reset_reg(d, r) ((d) &= ~((TCGRegSet)1 << (r)))
 #define tcg_regset_test_reg(d, r)  (((d) >> (r)) & 1)
+static inline int tcg_regset_count(TCGRegSet v)
+{
+    int c;
+    for (c = 0; v; c++) {
+        v &= v - 1;
+    }
+    return c;
+}
 
 #ifndef TCG_TARGET_INSN_UNIT_SIZE
 # error "Missing TCG_TARGET_INSN_UNIT_SIZE"
@@ -534,6 +542,10 @@ struct TCGBasicBlock {
     int last_arg;
     int pred_count;
     TCGEdge succ[2];
+
+    DECLARE_BITMAP(used_temps, TCG_MAX_TEMPS);
+    int used_temps_count;
+    int max_reg_pressure;
 };
 
 typedef enum TCGTempVal {

@@ -149,6 +149,7 @@ static struct tcg_region_state region;
 
 static TCGRegSet tcg_target_available_regs[2];
 static TCGRegSet tcg_target_call_clobber_regs;
+static int tcg_target_call_clobber_regs_count;
 
 #if TCG_TARGET_INSN_UNIT_SIZE == 1
 static __attribute__((unused)) inline void tcg_out8(TCGContext *s, uint8_t v)
@@ -703,6 +704,9 @@ void tcg_context_init(TCGContext *s)
     }
 
     tcg_target_init(s);
+
+    tcg_target_call_clobber_regs_count =
+        tcg_regset_count(tcg_target_call_clobber_regs);
     process_op_defs(s);
 
     /* Reverse the order of the saved registers, assuming they're all at
@@ -1765,6 +1769,11 @@ void tcg_dump_ops(TCGContext *s)
                 }
             }
         }
+        for (cur_bb = 0; cur_bb < s->bb_count; cur_bb++) {
+            qemu_log(" BB%d: pressure=%d, temps_used=%d\n", cur_bb,
+                    s->basic_blocks[cur_bb].max_reg_pressure,
+                    s->basic_blocks[cur_bb].used_temps_count);
+        }
     }
 }
 
@@ -1999,6 +2008,12 @@ static void liveness_pass_1(TCGContext *s)
     int nb_globals = s->nb_globals;
     int oi, oi_prev;
 
+    int bb_index = s->bb_count - 1;
+    TCGBasicBlock *bb = s->basic_blocks ? &s->basic_blocks[bb_index] : NULL;
+    int nb_call_clobber = tcg_target_call_clobber_regs_count;
+    int reg_pressure = 0;
+    TCGArg arg;
+
     tcg_la_func_end(s);
 
     for (oi = s->gen_op_buf[0].prev; oi != 0; oi = oi_prev) {
@@ -2034,6 +2049,29 @@ static void liveness_pass_1(TCGContext *s)
                     goto do_remove;
                 } else {
                 do_not_remove_call:
+                    /* compute register pressure in this instruction */
+                    for (i = nb_oargs; i < nb_oargs + nb_iargs; i++) {
+                        arg = op->args[i];
+                        if (s->temps[arg].state & TS_DEAD && arg >= s->nb_globals) {
+                            reg_pressure++;
+                        }
+                        if (bb) {
+                            set_bit(op->args[i], bb->used_temps);
+                        }
+                    }
+                    if (bb && bb->max_reg_pressure <
+                            reg_pressure + nb_call_clobber) {
+                        bb->max_reg_pressure = reg_pressure + nb_call_clobber;
+                    }
+                    for (i = 0; i < nb_oargs; i++) {
+                        arg = op->args[i];
+                        if (!(s->temps[arg].state & TS_DEAD) && arg >= s->nb_globals) {
+                            reg_pressure--;
+                        }
+                        if (bb) {
+                            set_bit(op->args[i], bb->used_temps);
+                        }
+                    }
 
                     /* output args are dead */
                     for (i = 0; i < nb_oargs; i++) {
@@ -2081,6 +2119,9 @@ static void liveness_pass_1(TCGContext *s)
             break;
         case INDEX_op_discard:
             /* mark the temporary as dead */
+            if (!(s->temps[op->args[0]].state & TS_DEAD) && op->args[0] >= s->nb_globals) {
+                reg_pressure--;
+            }
             arg_temp(op->args[0])->state = TS_DEAD;
             break;
 
@@ -2162,6 +2203,8 @@ static void liveness_pass_1(TCGContext *s)
             nb_oargs = 1;
             goto do_not_remove;
 
+        case INDEX_op_set_label:
+            reg_pressure = 0;
         default:
             /* XXX: optimize by hardcoding common cases (e.g. triadic ops) */
             nb_iargs = def->nb_iargs;
@@ -2180,6 +2223,36 @@ static void liveness_pass_1(TCGContext *s)
                 tcg_op_remove(s, op);
             } else {
             do_not_remove:
+                /* compute register pressure in this instruction */
+                for (i = nb_oargs; i < nb_oargs + nb_iargs; i++) {
+                    arg = op->args[i];
+                    if (s->temps[arg].state & TS_DEAD && arg >= s->nb_globals) {
+                        reg_pressure++;
+                    }
+                    if (bb) {
+                        set_bit(op->args[i], bb->used_temps);
+                    }
+                }
+                if (def->flags & TCG_OPF_CALL_CLOBBER) {
+                    if (bb && bb->max_reg_pressure <
+                            reg_pressure + nb_call_clobber) {
+                        bb->max_reg_pressure = reg_pressure + nb_call_clobber;
+                    }
+                } else {
+                    if (bb && bb->max_reg_pressure < reg_pressure) {
+                        bb->max_reg_pressure = reg_pressure;
+                    }
+                }
+                for (i = 0; i < nb_oargs; i++) {
+                    arg = op->args[i];
+                    if (!(s->temps[arg].state & TS_DEAD) && arg >= s->nb_globals) {
+                        reg_pressure--;
+                    }
+                    if (bb) {
+                        set_bit(op->args[i], bb->used_temps);
+                    }
+                }
+
                 /* output args are dead */
                 for (i = 0; i < nb_oargs; i++) {
                     arg_ts = arg_temp(op->args[i]);
@@ -2195,6 +2268,7 @@ static void liveness_pass_1(TCGContext *s)
                 /* if end of basic block, update */
                 if (def->flags & TCG_OPF_BB_END) {
                     tcg_la_bb_end(s);
+                    reg_pressure = 0;
                 } else if (def->flags & TCG_OPF_SIDE_EFFECTS) {
                     /* globals should be synced to memory */
                     for (i = 0; i < nb_globals; i++) {
@@ -2217,6 +2291,14 @@ static void liveness_pass_1(TCGContext *s)
             break;
         }
         op->life = arg_life;
+        if (oi < bb->first_insn) {
+            if (bb) {
+                bb->used_temps_count =
+                    bitmap_count(bb->used_temps, TCG_MAX_TEMPS);
+                bb--;
+            }
+            bb_index--;
+        }
     }
 }
 
