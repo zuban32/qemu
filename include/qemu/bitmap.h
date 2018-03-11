@@ -231,6 +231,7 @@ static inline long bitmap_count_one(const unsigned long *bitmap, long nbits)
 void bitmap_set(unsigned long *map, long i, long len);
 void bitmap_set_atomic(unsigned long *map, long i, long len);
 void bitmap_clear(unsigned long *map, long start, long nr);
+int bitmap_count(unsigned long *map, int nbits);
 bool bitmap_test_and_clear_atomic(unsigned long *map, long start, long nr);
 void bitmap_copy_and_clear_atomic(unsigned long *dst, unsigned long *src,
                                   long nr);

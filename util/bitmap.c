@@ -240,6 +240,25 @@ void bitmap_clear(unsigned long *map, long start, long nr)
     }
 }
 
+static int count_bits_long(unsigned long v)
+{
+    int c;
+    for (c = 0; v; c++) {
+        v &= v - 1;
+    }
+    return c;
+}
+
+int bitmap_count(unsigned long *map, int nbits)
+{
+    int i, res = 0;
+    for (i = 0; i < BITS_TO_LONGS(nbits) - 1; i++) {
+        res += count_bits_long(map[i]);
+    }
+    res += count_bits_long(map[i] & BITMAP_LAST_WORD_MASK(nbits));
+    return res;
+}
+
 bool bitmap_test_and_clear_atomic(unsigned long *map, long start, long nr)
 {
     unsigned long *p = map + BIT_WORD(start);
