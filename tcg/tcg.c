@@ -1600,12 +1600,12 @@ void tcg_dump_ops(TCGContext *s)
         TCGOpcode c;
         int col = 0;
 
-        col += qemu_log("%d: ", oi);
-
         if (s->basic_blocks && cur_bb < s->bb_count
                 && s->basic_blocks[cur_bb].first_insn == oi) {
-            col += qemu_log(" --- BB %d begin --- \n", cur_bb);
+            qemu_log(" --- BB %d begin --- \n", cur_bb);
         }
+
+        col += qemu_log("%d: ", oi);
 
         op = &s->gen_op_buf[oi];
         c = op->opc;
@@ -2052,11 +2052,12 @@ static void liveness_pass_1(TCGContext *s)
                     /* compute register pressure in this instruction */
                     for (i = nb_oargs; i < nb_oargs + nb_iargs; i++) {
                         arg = op->args[i];
-                        if (s->temps[arg].state & TS_DEAD && arg >= s->nb_globals) {
+                        arg_ts = arg_temp(op->args[i]);
+                        if ((arg_ts->state & TS_DEAD) && arg >= s->nb_globals) {
                             reg_pressure++;
                         }
                         if (bb) {
-                            set_bit(op->args[i], bb->used_temps);
+                            set_bit(temp_idx(arg_ts), bb->used_temps);
                         }
                     }
                     if (bb && bb->max_reg_pressure <
@@ -2065,11 +2066,12 @@ static void liveness_pass_1(TCGContext *s)
                     }
                     for (i = 0; i < nb_oargs; i++) {
                         arg = op->args[i];
-                        if (!(s->temps[arg].state & TS_DEAD) && arg >= s->nb_globals) {
+                        arg_ts = arg_temp(op->args[i]);
+                        if (!(arg_ts->state & TS_DEAD) && arg >= s->nb_globals) {
                             reg_pressure--;
                         }
                         if (bb) {
-                            set_bit(op->args[i], bb->used_temps);
+                            set_bit(temp_idx(arg_ts), bb->used_temps);
                         }
                     }
 
@@ -2119,7 +2121,7 @@ static void liveness_pass_1(TCGContext *s)
             break;
         case INDEX_op_discard:
             /* mark the temporary as dead */
-            if (!(s->temps[op->args[0]].state & TS_DEAD) && op->args[0] >= s->nb_globals) {
+            if (!(arg_temp(op->args[0])->state & TS_DEAD) && op->args[0] >= s->nb_globals) {
                 reg_pressure--;
             }
             arg_temp(op->args[0])->state = TS_DEAD;
@@ -2226,11 +2228,12 @@ static void liveness_pass_1(TCGContext *s)
                 /* compute register pressure in this instruction */
                 for (i = nb_oargs; i < nb_oargs + nb_iargs; i++) {
                     arg = op->args[i];
-                    if (s->temps[arg].state & TS_DEAD && arg >= s->nb_globals) {
+                    arg_ts = arg_temp(op->args[i]);
+                    if ((arg_ts->state & TS_DEAD) && arg >= s->nb_globals) {
                         reg_pressure++;
                     }
                     if (bb) {
-                        set_bit(op->args[i], bb->used_temps);
+                        set_bit(temp_idx(arg_ts), bb->used_temps);
                     }
                 }
                 if (def->flags & TCG_OPF_CALL_CLOBBER) {
@@ -2245,11 +2248,12 @@ static void liveness_pass_1(TCGContext *s)
                 }
                 for (i = 0; i < nb_oargs; i++) {
                     arg = op->args[i];
-                    if (!(s->temps[arg].state & TS_DEAD) && arg >= s->nb_globals) {
+                    arg_ts = arg_temp(op->args[i]);
+                    if (!(arg_ts->state & TS_DEAD) && arg >= s->nb_globals) {
                         reg_pressure--;
                     }
                     if (bb) {
-                        set_bit(op->args[i], bb->used_temps);
+                        set_bit(temp_idx(arg_ts), bb->used_temps);
                     }
                 }
 
@@ -2287,18 +2291,18 @@ static void liveness_pass_1(TCGContext *s)
                 for (i = nb_oargs; i < nb_oargs + nb_iargs; i++) {
                     arg_temp(op->args[i])->state &= ~TS_DEAD;
                 }
+                if (op->bb != bb_index && op->bb != -1) {
+                    if (bb) {
+                        bb->used_temps_count =
+                            bitmap_count(bb->used_temps, TCG_MAX_TEMPS);
+                        bb--;
+                    }
+                    bb_index--;
+                }
             }
             break;
         }
         op->life = arg_life;
-        if (oi < bb->first_insn) {
-            if (bb) {
-                bb->used_temps_count =
-                    bitmap_count(bb->used_temps, TCG_MAX_TEMPS);
-                bb--;
-            }
-            bb_index--;
-        }
     }
 }
 
@@ -2547,6 +2551,7 @@ static void tcg_build_cfg(TCGContext *s)
             succ_count = 0;
             bb_index++;
         }
+        op->bb = bb_index-1;
 //        fprintf(stderr, "op %d\n", oi);
         switch (opc) {
         case INDEX_op_call:
@@ -3408,9 +3413,9 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
     if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP)
                  && qemu_log_in_addr_range(tb->pc))) {
         qemu_log_lock();
-//        qemu_log("OP:\n");
-//        tcg_dump_ops(s);
-//        qemu_log("\n");
+        qemu_log("OP:\n");
+        tcg_dump_ops(s);
+        qemu_log("\n");
         qemu_log_unlock();
     }
 #endif
