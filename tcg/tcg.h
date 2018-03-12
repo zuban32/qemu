@@ -591,6 +591,7 @@ typedef struct TCGTemp {
        allocated separately.  */
     uintptr_t state;
     void *state_ptr;
+    TCGTempVal prev_val;
 } TCGTemp;
 
 typedef struct TCGContext TCGContext;
