@@ -532,7 +532,10 @@ typedef struct TCGEdge TCGEdge;
 
 struct TCGEdge {
     int edge_is_tb_exit;
+    TCGBasicBlock *src;
     TCGBasicBlock *dest;
+    TCGEdge *next_pred;
+    int dfs_mark;
 };
 
 struct TCGBasicBlock {
@@ -542,10 +545,14 @@ struct TCGBasicBlock {
     int last_arg;
     int pred_count;
     TCGEdge succ[2];
+    TCGEdge *first_pred;
 
     DECLARE_BITMAP(used_temps, TCG_MAX_TEMPS);
     int used_temps_count;
     int max_reg_pressure;
+
+    int prealloc_temps_before[TCG_MAX_TEMPS];
+    int prealloc_temps_after[TCG_MAX_TEMPS];
 };
 
 typedef enum TCGTempVal {

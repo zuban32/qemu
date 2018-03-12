@@ -24,6 +24,7 @@
 
 /* define it to use liveness analysis (better code) */
 #define USE_TCG_OPTIMIZATIONS
+#define GLOBAL_REG_ALLOC
 
 #include "qemu/osdep.h"
 
@@ -1593,6 +1594,7 @@ void tcg_dump_ops(TCGContext *s)
     TCGOp *op;
     int oi;
     int cur_bb = 0;
+    TCGBasicBlock *bb;
 
     for (oi = s->gen_op_buf[0].next; oi != 0; oi = op->next) {
         int i, k, nb_oargs, nb_iargs, nb_cargs;
@@ -1770,9 +1772,28 @@ void tcg_dump_ops(TCGContext *s)
             }
         }
         for (cur_bb = 0; cur_bb < s->bb_count; cur_bb++) {
+            bb = &s->basic_blocks[cur_bb];
             qemu_log(" BB%d: pressure=%d, temps_used=%d\n", cur_bb,
-                    s->basic_blocks[cur_bb].max_reg_pressure,
-                    s->basic_blocks[cur_bb].used_temps_count);
+                    bb->max_reg_pressure, bb->used_temps_count);
+#ifdef CONFIG_DEBUG_TCG
+            qemu_log(" before:");
+            for (int i = 0; i < s->nb_temps; i++) {
+                if (bb->prealloc_temps_before[i] >= 0) {
+                    tcg_get_arg_str_idx(s, buf, sizeof(buf), i);
+                    qemu_log("  %s -> %s", buf,
+                        tcg_target_reg_names[bb->prealloc_temps_before[i]]);
+                }
+            }
+            qemu_log("\n after:");
+            for (int i = 0; i < s->nb_temps; i++) {
+                if (bb->prealloc_temps_after[i] >= 0) {
+                    tcg_get_arg_str_idx(s, buf, sizeof(buf), i);
+                    qemu_log("  %s -> %s", buf,
+                        tcg_target_reg_names[bb->prealloc_temps_after[i]]);
+                }
+            }
+#endif
+            qemu_log("\n");
         }
     }
 }
@@ -2472,6 +2493,7 @@ static void tcg_build_cfg(TCGContext *s)
     int next_insn_is_bb_start;
     int label_to_bb[512];
     TCGEdge *edge;
+    TCGBasicBlock *bb;
 
     for (oi = s->gen_op_buf[0].next; oi != 0; oi = oi_next) {
 //        fprintf(stderr, "op %d", oi);
@@ -2603,7 +2625,226 @@ static void tcg_build_cfg(TCGContext *s)
         cur_insn_is_bb_start = next_insn_is_bb_start;
     }
     assert (bb_index == bb_count);
+
+    /* Compute predecessor list */
+    for (bb_index = 0; bb_index < bb_count; bb_index++) {
+        bb = &s->basic_blocks[bb_index];
+        for (int i = 0; i < 2; i++) {
+            if (bb->succ[i].dest || bb->succ[i].edge_is_tb_exit) {
+                bb->succ[i].src = bb;
+            }
+            if (bb->succ[i].dest) {
+                bb->succ[i].next_pred = bb->succ[i].dest->first_pred;
+                bb->succ[i].dest->first_pred = &bb->succ[i];
+            }
+        }
+    }
 }
+
+#ifdef GLOBAL_REG_ALLOC
+
+/*
+ * This global register allocation algorithm complements existing local
+ * algorithm by suppling consistent pre- and post- temp-to-register mappings
+ * for each basic block.  The mapping is consistent if for each edge of CFG
+ * post temp-to-register mapping of source basic block is equal to pre mapping
+ * of destination basic block.  The local register allocation algorithm then
+ * assumes that pre-mapping holds before BB starts and guarantees that
+ * post-mapping is achieved after BB's execution is finished.
+ *
+ * Let's define junction as a set of edges of CFG with the following properties:
+ *   1. Every edge belongs to one and only one junction.
+ *   2. Two adjacent edges belong to one junction.
+ *
+ * TODO: finish this blah-blah-blah
+ */
+
+typedef enum { DFS_DIR_SUCC, DFS_DIR_PRED } TCGDFSDir;
+
+#define DFS_MARK_UNMARKED   0
+#define DFS_MARK_STAT       1
+#define DFS_MARK_PREALLOC   2
+
+typedef void DFSAction(TCGBasicBlock *src, TCGEdge *edge, void *opaque);
+
+typedef struct {
+    int max_reg_pressure;
+    int temp_score[TCG_MAX_TEMPS];
+    int is_exit_junction;
+} GlobalRAStat;
+
+static void dfs(TCGBasicBlock *bb, TCGDFSDir dir, int mark, DFSAction act, void *opaque)
+{
+    int i;
+    TCGEdge *edge;
+    if (dir == DFS_DIR_SUCC) {
+        for (i = 0; i < 2; i++) {
+            if (bb->succ[i].dest && bb->succ[i].dfs_mark != mark) {
+                bb->succ[i].dfs_mark = mark;
+                act(bb, &bb->succ[i], opaque);
+                dfs(bb->succ[i].dest, DFS_DIR_PRED, mark, act, opaque);
+            }
+            if (bb->succ[i].edge_is_tb_exit) {
+                bb->succ[i].dfs_mark = mark;
+                act(bb, &bb->succ[i], opaque);
+            }
+        }
+    } else {
+        for (edge = bb->first_pred; edge; edge = edge->next_pred) {
+            if (edge->dest && edge->dfs_mark != mark) {
+                edge->dfs_mark = mark;
+                act(edge->src, edge, opaque);
+                dfs(edge->src, DFS_DIR_SUCC, mark, act, opaque);
+            }
+        }
+    }
+}
+
+static void dfs_apply_prealloc(TCGBasicBlock *src, TCGEdge *edge, void *opaque)
+{
+    int *prealloc = (int *)opaque;
+    int i;
+
+    for (i = 0; i < TCG_MAX_TEMPS; i++) {
+        src->prealloc_temps_after[i] = prealloc[i];
+        if (edge->dest) {
+            edge->dest->prealloc_temps_before[i] = prealloc[i];
+        }
+    }
+}
+
+static void dfs_stat_count(TCGBasicBlock *src, TCGEdge *edge, void *opaque)
+{
+    GlobalRAStat *s = (GlobalRAStat *)opaque;
+    TCGBasicBlock *dst = NULL;
+    int i;
+
+    if (edge->edge_is_tb_exit || s->is_exit_junction) {
+        s->is_exit_junction = 1;
+        return;
+    }
+
+    dst = edge->dest;
+
+    if (src->max_reg_pressure > s->max_reg_pressure) {
+        s->max_reg_pressure = src->max_reg_pressure;
+    }
+    if (dst->max_reg_pressure > s->max_reg_pressure) {
+        s->max_reg_pressure = dst->max_reg_pressure;
+    }
+
+    /* TODO: use TCGContext->nb_temps instead */
+    for(i = 0; i < TCG_MAX_TEMPS; i++) {
+        if (test_bit(i, src->used_temps)) {
+            s->temp_score[i]++;
+        }
+        if (test_bit(i, dst->used_temps)) {
+            s->temp_score[i]++;
+        }
+    }
+}
+
+static void tcg_global_reg_alloc(TCGContext *s)
+{
+    static GlobalRAStat stat;
+    static int prealloc[TCG_MAX_TEMPS];
+    static int candidates[TCG_MAX_TEMPS];
+    int nb_prealloc;
+    TCGBasicBlock *bb;
+    int i, j, k, n;
+    int tmp;
+
+    for (i = 0; i < s->nb_temps; i++) {
+        if (s->temps[i].fixed_reg) {
+            assert(tcg_regset_test_reg(s->reserved_regs, s->temps[i].reg));
+        }
+    }
+
+    if (!s->basic_blocks) {
+        return ;
+    }
+    for (i = 0; i < s->bb_count; i++) {
+        for (j = 0; j < s->nb_temps; j++) {
+            if (s->temps[j].fixed_reg) {
+                s->basic_blocks[i].prealloc_temps_before[j] = s->temps[j].reg;
+                s->basic_blocks[i].prealloc_temps_after[j] = s->temps[j].reg;
+            } else {
+                s->basic_blocks[i].prealloc_temps_before[j] = -1;
+                s->basic_blocks[i].prealloc_temps_after[j] = -1;
+            }
+        }
+    }
+
+    for (i = 0; i < s->bb_count; i++) {
+        bb = &s->basic_blocks[i];
+        if (bb->succ[0].dest && bb->succ[0].dfs_mark == DFS_MARK_UNMARKED) {
+            memset(&stat, 0, sizeof(stat));
+            dfs(bb, DFS_DIR_SUCC, DFS_MARK_STAT, dfs_stat_count, &stat);
+
+            nb_prealloc = TCG_TARGET_NB_REGS - stat.max_reg_pressure;
+            if (nb_prealloc <= 0) {
+                continue ;
+            }
+
+            memset(prealloc, -1, sizeof(prealloc[0]) * TCG_MAX_TEMPS);
+            n = 0;
+            for (j = 0; j < s->nb_globals; j++) {
+                if (!s->temps[j].fixed_reg) {
+                    candidates[n++] = j;
+                } else {
+                    prealloc[j] = s->temps[j].reg;
+                }
+            }
+            for (j = s->nb_globals; j < s->nb_temps; j++) {
+                if (s->temps[j].temp_local) {
+                    candidates[n++] = j;
+                }
+            }
+
+            for (j = 0; j < nb_prealloc; j++) {
+                for (k = j + 1; k < n; k++) {
+                    if (stat.temp_score[candidates[j]] < stat.temp_score[candidates[k]]) {
+                        tmp = candidates[j];
+                        candidates[j] = candidates[k];
+                        candidates[k] = tmp;
+                    }
+                }
+            }
+
+            n = 0;
+            for (j = 0; n < nb_prealloc && j < TCG_TARGET_NB_REGS; j++) {
+                k = tcg_target_reg_alloc_order[j];
+                if (!tcg_regset_test_reg(s->reserved_regs, k)) {
+                    prealloc[candidates[n++]] = k;
+                }
+            }
+
+            dfs(bb, DFS_DIR_SUCC, DFS_MARK_PREALLOC, dfs_apply_prealloc, prealloc);
+        }
+    }
+}
+
+#undef DFS_MARK_UNMARKED
+#undef DFS_MARK_STAT
+#undef DFS_MARK_PREALLOC
+
+#else
+
+static void tcg_global_reg_alloc(TCGContext *s)
+{
+    int i, j;
+    if (!s->basic_blocks) {
+        return ;
+    }
+    for (i = 0; i < s->bb_count; i++) {
+        for (j = 0; j < s->nb_temps; j++) {
+            s->basic_blocks[i].prealloc_temps_before[j] = -1;
+            s->basic_blocks[i].prealloc_temps_after[j] = -1;
+        }
+    }
+}
+
+#endif
 
 #ifdef CONFIG_DEBUG_TCG
 static void dump_regs(TCGContext *s)
@@ -3467,6 +3708,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
         qemu_log_unlock();
     }
 #endif
+    tcg_global_reg_alloc(s);
 
     tcg_reg_alloc_start(s);
 
