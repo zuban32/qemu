@@ -2674,6 +2674,8 @@ typedef void DFSAction(TCGBasicBlock *src, TCGEdge *edge, void *opaque);
 typedef struct {
     int max_reg_pressure;
     int temp_score[TCG_MAX_TEMPS];
+    int temp_score_before[TCG_MAX_TEMPS];
+    int temp_score_after[TCG_MAX_TEMPS];
     int is_exit_junction;
 } GlobalRAStat;
 
@@ -2740,11 +2742,12 @@ static void dfs_stat_count(TCGBasicBlock *src, TCGEdge *edge, void *opaque)
     /* TODO: use TCGContext->nb_temps instead */
     for(i = 0; i < TCG_MAX_TEMPS; i++) {
         if (test_bit(i, src->used_temps)) {
-            s->temp_score[i]++;
+            s->temp_score_after[i]++;
         }
         if (test_bit(i, dst->used_temps)) {
-            s->temp_score[i]++;
+            s->temp_score_before[i]++;
         }
+        s->temp_score[i] = s->temp_score_before[i] * s->temp_score_after[i];
     }
 }
 
@@ -2812,7 +2815,7 @@ static void tcg_global_reg_alloc(TCGContext *s)
                 }
             }
             for (j = s->nb_globals; j < s->nb_temps; j++) {
-                if (s->temps[j].temp_local) {
+                if (s->temps[j].temp_local && stat.temp_score[j] > 0) {
                     candidates[n++] = j;
                 }
             }
