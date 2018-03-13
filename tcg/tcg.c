@@ -3049,8 +3049,8 @@ static void tcg_reg_free(TCGContext *s, TCGReg reg, TCGRegSet allocated_regs)
 }
 
 /* Allocate a register belonging to reg1 & ~reg2 */
-static TCGReg tcg_reg_alloc(TCGContext *s, TCGRegSet desired_regs,
-                            TCGRegSet allocated_regs, bool rev)
+static TCGReg tcg_reg_alloc_hint(TCGContext *s, TCGRegSet desired_regs,
+                            TCGRegSet allocated_regs, bool rev, int hint)
 {
     int i, n = ARRAY_SIZE(tcg_target_reg_alloc_order);
     const int *order;
@@ -3058,6 +3058,13 @@ static TCGReg tcg_reg_alloc(TCGContext *s, TCGRegSet desired_regs,
     TCGRegSet reg_ct;
 
     reg_ct = desired_regs & ~allocated_regs;
+
+    if (hint >= 0) {
+        if (tcg_regset_test_reg(reg_ct, hint) && s->reg_to_temp[hint] == -1) {
+            return hint;
+        }
+    }
+
     order = rev ? indirect_reg_alloc_order : tcg_target_reg_alloc_order;
 
     /* first try free registers */
@@ -3065,6 +3072,16 @@ static TCGReg tcg_reg_alloc(TCGContext *s, TCGRegSet desired_regs,
         reg = order[i];
         if (tcg_regset_test_reg(reg_ct, reg) && s->reg_to_temp[reg] == NULL)
             return reg;
+    }
+
+    if (hint >= 0) {
+        if (tcg_regset_test_reg(reg_ct, hint)) {
+#ifdef CONFIG_PROFILER
+            spill_cause = SPILL_REAL;
+#endif
+            tcg_reg_free(s, hint);
+            return hint;
+        }
     }
 
     /* XXX: do better spill choice */
@@ -3079,6 +3096,18 @@ static TCGReg tcg_reg_alloc(TCGContext *s, TCGRegSet desired_regs,
     tcg_abort();
 }
 
+static int tcg_reg_alloc(TCGContext *s, TCGRegSet desired_regs,
+        TCGRegSet allocated_regs, bool rev, int temp)
+{
+    if (!s->cur_bb || temp < 0) {
+        return tcg_reg_alloc_hint(s, desired_regs, allocated_regs, rev, -1);
+    } else {
+        return tcg_reg_alloc_hint(s, desired_regs, allocated_regs, rev,
+                    s->cur_bb->prealloc_temps_after[temp]);
+    }
+}
+
+
 /* Make sure the temporary is in a register.  If needed, allocate the register
    from DESIRED while avoiding ALLOCATED.  */
 static void temp_load(TCGContext *s, TCGTemp *ts, TCGRegSet desired_regs,
@@ -3090,7 +3119,7 @@ static void temp_load(TCGContext *s, TCGTemp *ts, TCGRegSet desired_regs,
     case TEMP_VAL_REG:
         return;
     case TEMP_VAL_CONST:
-        reg = tcg_reg_alloc(s, desired_regs, allocated_regs, ts->indirect_base);
+        reg = tcg_reg_alloc(s, desired_regs, allocated_regs, ts->indirect_base, temp_idx(ts));
         tcg_out_movi(s, ts->type, reg, ts->val);
         ts->mem_coherent = 0;
         break;
