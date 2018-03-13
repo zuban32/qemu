@@ -3132,8 +3132,8 @@ static int tcg_reg_chain_unwind(TCGContext *s, int reg, int *reg_to_temp)
         tcg_out_mov(s, ts->type, reg, ts->reg);
         tmp = ts->reg;
         ts->reg = reg;
-        s->reg_to_temp[reg] = reg_to_temp[reg];
-        s->reg_to_temp[tmp] = -1;
+        s->reg_to_temp[reg] = &s->temps[reg_to_temp[reg]];
+        s->reg_to_temp[tmp] = NULL;
         reg = tmp;
     }
     return reg;
@@ -3159,7 +3159,7 @@ static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs,
                    Keep an tcg_debug_assert for safety. */
                 tcg_debug_assert(ts->val_type == TEMP_VAL_DEAD);
                 if (ts->prev_val == TEMP_VAL_REG) {
-                    s->reg_to_temp[ts->reg] = -1;
+                    s->reg_to_temp[ts->reg] = NULL;
                 }
             }
         }
@@ -3177,11 +3177,11 @@ static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs,
 #ifdef CONFIG_PROFILER
                     spill_cause = SPILL_BB_END;
 #endif
-                    temp_save(s, i, allocated_regs);
+                    temp_save(s, &s->temps[i], allocated_regs);
                 } else {
                     ts = &s->temps[i];
                     if (ts->val_type == TEMP_VAL_REG) {
-                        s->reg_to_temp[ts->reg] = -1;
+                        s->reg_to_temp[ts->reg] = NULL;
                     }
                     ts->val_type = TEMP_VAL_DEAD;
                 }
@@ -3200,17 +3200,17 @@ static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs,
         }
         for (i = 0; i < TCG_TARGET_NB_REGS; i++) {
             if (reg_to_temp[i] >= 0 && s->reg_to_temp[i] >= 0
-                    && reg_to_temp[i] != s->reg_to_temp[i]) {
+                    && reg_to_temp[i] != temp_idx(s->reg_to_temp[i])) {
                 if (reg < 0) {
-                    ts = &s->temps[s->reg_to_temp[i]];
+                    ts = s->reg_to_temp[i];
                     /* TODO: prof */
-                    tcg_reg_free(s, ts->reg);
+                    tcg_reg_free(s, ts->reg, allocated_regs);
                     reg = tcg_reg_chain_unwind(s, i, reg_to_temp);
                 } else {
-                    ts = &s->temps[s->reg_to_temp[i]];
+                    ts = s->reg_to_temp[i];
                     tcg_out_mov(s, ts->type, reg, ts->reg);
                     s->reg_to_temp[reg] = s->reg_to_temp[i];
-                    s->reg_to_temp[i] = -1;
+                    s->reg_to_temp[i] = NULL;
                     assert(reg == tcg_reg_chain_unwind(s, i, reg_to_temp));
                 }
             }
@@ -3224,13 +3224,13 @@ static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs,
                 switch (ts->val_type) {
                 case TEMP_VAL_CONST:
                     tcg_out_movi(s, ts->type, i, ts->val);
-                    s->reg_to_temp[i] = reg_to_temp[i];
+                    s->reg_to_temp[i] = &s->temps[reg_to_temp[i]];
                     ts->val_type = TEMP_VAL_REG;
                     ts->reg = i;
                     break;
                 case TEMP_VAL_MEM:
                     tcg_out_ld(s, ts->type, i, ts->mem_base->reg, ts->mem_offset);
-                    s->reg_to_temp[i] = reg_to_temp[i];
+                    s->reg_to_temp[i] = &s->temps[reg_to_temp[i]];
                     ts->val_type = TEMP_VAL_REG;
                     ts->reg = i;
                     break;
@@ -3241,7 +3241,7 @@ static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs,
                     assert(0);
                 }
             } else {
-                assert(reg_to_temp[i] == s->reg_to_temp[i]);
+                assert(reg_to_temp[i] == temp_idx(s->reg_to_temp[i]));
             }
         }
     }
@@ -3844,7 +3844,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
             for (i = 0; i < s->nb_temps; i++) {
                 if (bb->prealloc_temps_before[i] >= 0 && !s->temps[i].fixed_reg) {
                     s->temps[i].reg = bb->prealloc_temps_before[i];
-                    s->reg_to_temp[s->temps[i].reg] = i;
+                    s->reg_to_temp[s->temps[i].reg] = &s->temps[i];
                 }
             }
         }
@@ -3864,7 +3864,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
                     if (bb->prealloc_temps_before[i] >= 0 && !s->temps[i].fixed_reg) {
                         s->temps[i].reg = bb->prealloc_temps_before[i];
                         s->temps[i].val_type = TEMP_VAL_REG;
-                        s->reg_to_temp[s->temps[i].reg] = i;
+                        s->reg_to_temp[s->temps[i].reg] = &s->temps[i];
                     }
                 }
             }
