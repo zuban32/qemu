@@ -3060,7 +3060,7 @@ static TCGReg tcg_reg_alloc_hint(TCGContext *s, TCGRegSet desired_regs,
     reg_ct = desired_regs & ~allocated_regs;
 
     if (hint >= 0) {
-        if (tcg_regset_test_reg(reg_ct, hint) && s->reg_to_temp[hint] == -1) {
+        if (tcg_regset_test_reg(reg_ct, hint) && s->reg_to_temp[hint] == NULL) {
             return hint;
         }
     }
@@ -3079,7 +3079,7 @@ static TCGReg tcg_reg_alloc_hint(TCGContext *s, TCGRegSet desired_regs,
 #ifdef CONFIG_PROFILER
             spill_cause = SPILL_REAL;
 #endif
-            tcg_reg_free(s, hint);
+            tcg_reg_free(s, hint, allocated_regs);
             return hint;
         }
     }
@@ -3114,17 +3114,18 @@ static void temp_load(TCGContext *s, TCGTemp *ts, TCGRegSet desired_regs,
                       TCGRegSet allocated_regs)
 {
     TCGReg reg;
+    int idx = temp_idx(ts);
 
     switch (ts->val_type) {
     case TEMP_VAL_REG:
         return;
     case TEMP_VAL_CONST:
-        reg = tcg_reg_alloc(s, desired_regs, allocated_regs, ts->indirect_base, temp_idx(ts));
+        reg = tcg_reg_alloc(s, desired_regs, allocated_regs, ts->indirect_base, idx);
         tcg_out_movi(s, ts->type, reg, ts->val);
         ts->mem_coherent = 0;
         break;
     case TEMP_VAL_MEM:
-        reg = tcg_reg_alloc(s, desired_regs, allocated_regs, ts->indirect_base);
+        reg = tcg_reg_alloc(s, desired_regs, allocated_regs, ts->indirect_base, idx);
         tcg_out_ld(s, ts->type, reg, ts->mem_base->reg, ts->mem_offset);
         ts->mem_coherent = 1;
         break;
@@ -3396,7 +3397,8 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOp *op)
                    input one. */
                 tcg_regset_set_reg(allocated_regs, ts->reg);
                 ots->reg = tcg_reg_alloc(s, tcg_target_available_regs[otype],
-                                         allocated_regs, ots->indirect_base);
+                                         allocated_regs, ots->indirect_base,
+                                         temp_idx(ots));
             }
             tcg_out_mov(s, otype, ots->reg, ts->reg);
         }
@@ -3473,7 +3475,8 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op, TCGBasicBlock *cur_
             }
         } else if (ts->val_type == TEMP_VAL_MEM) {
             tcg_regset_or(total_used_regs, i_allocated_regs, global_regs);
-            reg = tcg_reg_alloc(s, arg_ct->u.regs, total_used_regs, ts->indirect_base);
+            reg = tcg_reg_alloc(s, arg_ct->u.regs, total_used_regs, ts->indirect_base,
+                    temp_idx(ts));
             tcg_out_ld(s, ts->type, reg, ts->mem_base->reg, ts->mem_offset);
             ts->val_type = TEMP_VAL_REG;
             ts->reg = reg;
@@ -3482,7 +3485,8 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op, TCGBasicBlock *cur_
         } else if(ts->val_type == TEMP_VAL_CONST) {
             /* need to move to a register */
             tcg_regset_or(total_used_regs, i_allocated_regs, global_regs);
-            reg = tcg_reg_alloc(s, arg_ct->u.regs, total_used_regs, ts->indirect_base);
+            reg = tcg_reg_alloc(s, arg_ct->u.regs, total_used_regs, ts->indirect_base,
+                    temp_idx(ts));
             tcg_out_movi(s, ts->type, reg, ts->val);
             ts->val_type = TEMP_VAL_REG;
             ts->reg = reg;
@@ -3524,7 +3528,8 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op, TCGBasicBlock *cur_
             /* allocate a new register matching the constraint 
                and move the temporary register into it */
             tcg_regset_or(total_used_regs, i_allocated_regs, global_regs);
-            reg = tcg_reg_alloc(s, arg_ct->u.regs, total_used_regs, ts->indirect_base);
+            reg = tcg_reg_alloc(s, arg_ct->u.regs, total_used_regs, ts->indirect_base,
+                    temp_idx(ts));
             tcg_out_mov(s, ts->type, reg, ts->reg);
         }
         new_args[i] = reg;
@@ -3557,7 +3562,8 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op, TCGBasicBlock *cur_
                         /* allocate a new register matching the constraint
                            and move the temporary register into it */
                         tcg_regset_or(total_used_regs, i_allocated_regs, global_regs);
-                        reg = tcg_reg_alloc(s, arg_ct->u.regs, total_used_regs, ts->indirect_base);
+                        reg = tcg_reg_alloc(s, arg_ct->u.regs, total_used_regs, ts->indirect_base,
+                                temp_idx(ts));
                         tcg_out_mov(s, ts->type, reg, ts->reg);
                         tcg_regset_set_reg(i_allocated_regs, reg);
                     }
@@ -3592,7 +3598,8 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op, TCGBasicBlock *cur_
             } else if (arg_ct->ct & TCG_CT_NEWREG) {
                 reg = tcg_reg_alloc(s, arg_ct->u.regs,
                                     i_allocated_regs | o_allocated_regs,
-                                    ts->indirect_base);
+                                    ts->indirect_base,
+                                    temp_idx(ts));
             } else {
                 /* if fixed register, we try to use it */
                 reg = ts->reg;
@@ -3601,7 +3608,8 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op, TCGBasicBlock *cur_
                     goto oarg_end;
                 }
                 reg = tcg_reg_alloc(s, arg_ct->u.regs, o_allocated_regs,
-                                    ts->indirect_base);
+                                    ts->indirect_base,
+                                    temp_idx(ts));
             }
             tcg_regset_set_reg(o_allocated_regs, reg);
             /* if a fixed register is used, then a move will be done afterwards */
@@ -3961,6 +3969,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
 
     if (s->basic_blocks) {
         bb = &s->basic_blocks[0];
+        s->cur_bb = bb;
         if (s->bb_count > 0) {
             for (i = 0; i < s->nb_temps; i++) {
                 if (bb->prealloc_temps_before[i] >= 0 && !s->temps[i].fixed_reg) {
@@ -4058,6 +4067,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
             } else {
                 bb = NULL;
             }
+            s->cur_bb = bb;
         }
     }
     tcg_debug_assert(num_insns >= 0);

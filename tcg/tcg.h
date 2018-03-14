@@ -733,6 +733,7 @@ struct TCGContext {
     target_ulong gen_insn_data[TCG_MAX_INSNS][TARGET_INSN_START_WORDS];
 
     TCGBasicBlock *basic_blocks;
+    TCGBasicBlock *cur_bb;
     int tb_with_several_bb;
     int bb_count;
 };
