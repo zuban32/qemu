@@ -1775,24 +1775,24 @@ void tcg_dump_ops(TCGContext *s)
             bb = &s->basic_blocks[cur_bb];
             qemu_log(" BB%d: pressure=%d, temps_used=%d\n", cur_bb,
                     bb->max_reg_pressure, bb->used_temps_count);
-//#ifdef CONFIG_DEBUG_TCG
-//            qemu_log(" before:");
-//            for (int i = 0; i < s->nb_temps; i++) {
-//                if (bb->prealloc_temps_before[i] >= 0) {
-//                    tcg_get_arg_str_idx(s, buf, sizeof(buf), i);
-//                    qemu_log("  %s -> %s", buf,
-//                        tcg_target_reg_names[bb->prealloc_temps_before[i]]);
-//                }
-//            }
-//            qemu_log("\n after:");
-//            for (int i = 0; i < s->nb_temps; i++) {
-//                if (bb->prealloc_temps_after[i] >= 0) {
-//                    tcg_get_arg_str_idx(s, buf, sizeof(buf), i);
-//                    qemu_log("  %s -> %s", buf,
-//                        tcg_target_reg_names[bb->prealloc_temps_after[i]]);
-//                }
-//            }
-//#endif
+#ifdef CONFIG_DEBUG_TCG
+            qemu_log(" before:");
+            for (int i = 0; i < s->nb_temps; i++) {
+                if (bb->prealloc_temps_before[i] >= 0) {
+                    tcg_get_arg_str_idx(s, buf, sizeof(buf), i);
+                    qemu_log("  %s -> %s", buf,
+                        tcg_target_reg_names[bb->prealloc_temps_before[i]]);
+                }
+            }
+            qemu_log("\n after:");
+            for (int i = 0; i < s->nb_temps; i++) {
+                if (bb->prealloc_temps_after[i] >= 0) {
+                    tcg_get_arg_str_idx(s, buf, sizeof(buf), i);
+                    qemu_log("  %s -> %s", buf,
+                        tcg_target_reg_names[bb->prealloc_temps_after[i]]);
+                }
+            }
+#endif
             qemu_log("\n");
         }
     }
@@ -3202,7 +3202,7 @@ static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs,
     TCGTemp *ts;
     int i;
     static int reg_to_temp[TCG_TARGET_NB_REGS];
-    int reg;
+    int reg, reg_new;
 
     if (!cur_bb) {
         for (i = s->nb_globals; i < s->nb_temps; i++) {
@@ -3270,7 +3270,8 @@ static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs,
                     s->reg_to_temp[reg] = s->reg_to_temp[i];
                     s->reg_to_temp[i] = NULL;
                     ts->reg = reg;
-                    assert(reg == tcg_reg_chain_unwind(s, i, reg_to_temp));
+                    reg_new = tcg_reg_chain_unwind(s, i, reg_to_temp);
+                    assert(reg == reg_new);
                 }
             }
         }
