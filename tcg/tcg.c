@@ -2091,7 +2091,7 @@ static void liveness_pass_1(TCGContext *s)
                                 && !arg_ts->temp_local) {
                             reg_pressure++;
                         }
-                        if (bb) {
+                        if (bb && arg < s->nb_globals) {
                             set_bit(temp_idx(arg_ts), bb->used_temps);
                         }
                     }
@@ -2106,7 +2106,7 @@ static void liveness_pass_1(TCGContext *s)
                                 && !arg_ts->temp_local) {
                             reg_pressure--;
                         }
-                        if (bb) {
+                        if (bb && arg < s->nb_globals) {
                             set_bit(temp_idx(arg_ts), bb->used_temps);
                         }
                     }
@@ -2269,7 +2269,7 @@ static void liveness_pass_1(TCGContext *s)
                             && !arg_ts->temp_local) {
                         reg_pressure++;
                     }
-                    if (bb) {
+                    if (bb && arg < s->nb_globals) {
                         set_bit(temp_idx(arg_ts), bb->used_temps);
                     }
                 }
@@ -2290,7 +2290,7 @@ static void liveness_pass_1(TCGContext *s)
                             && !arg_ts->temp_local) {
                         reg_pressure--;
                     }
-                    if (bb) {
+                    if (bb && arg < s->nb_globals) {
                         set_bit(temp_idx(arg_ts), bb->used_temps);
                     }
                 }
@@ -2891,6 +2891,10 @@ static void dfs_stat_count(TCGBasicBlock *src, TCGEdge *edge, void *opaque)
 
     /* TODO: use TCGContext->nb_temps instead */
     for(i = 0; i < TCG_MAX_TEMPS; i++) {
+        if (test_bit(i, src->used_temps) && test_bit(i, dst->used_temps)) {
+            s->temp_score[i]++;
+        }
+/*
         if (test_bit(i, src->used_temps)) {
             s->temp_score_after[i]++;
         }
@@ -2898,6 +2902,7 @@ static void dfs_stat_count(TCGBasicBlock *src, TCGEdge *edge, void *opaque)
             s->temp_score_before[i]++;
         }
         s->temp_score[i] = s->temp_score_before[i] * s->temp_score_after[i];
+*/
     }
 }
 
