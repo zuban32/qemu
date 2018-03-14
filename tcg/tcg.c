@@ -2672,6 +2672,129 @@ static void tcg_build_cfg(TCGContext *s)
     }
 }
 
+#if 0
+static void tcg_traverse_reg_chain(TCGContext *s, int *temp_to_reg,
+                                   int *reg_to_temp_required, int reg)
+{
+    int tmp, next_reg;
+    while (s->reg_to_temp[reg] == -1 && reg_to_temp_required[reg] != -1) {
+        tmp = reg_to_temp_required[reg];
+        if (s->temps[tmp].val_type != TEMP_VAL_REG) {
+            return;
+        }
+        next_reg = s->temps[tmp].reg;
+        tcg_out_mov(s, s->temps[tmp].type, reg, s->temps[tmp].reg);
+        s->reg_to_temp[reg] = tmp;
+        s->reg_to_temp[next_reg] = -1;
+        s->temps[tmp].reg = reg;
+        reg = next_reg;
+    }
+}
+
+static int tcg_get_free_reg(TCGContext *s, TCGRegSet reg1, TCGRegSet reg2)
+{
+    TCGRegSet reg_ct;
+    int i, reg;
+    tcg_regset_andnot(reg_ct, reg1, reg2);
+    for(i = 0; i < ARRAY_SIZE(tcg_target_reg_alloc_order); i++) {
+        reg = tcg_target_reg_alloc_order[i];
+        if (tcg_regset_test_reg(reg_ct, reg) && s->reg_to_temp[reg] == -1) {
+            return reg;
+        }
+    }
+    return -1;
+}
+
+/* Rearrange globals-to-registers mapping to match reqired. */
+static void tcg_normalize_regs(TCGContext *s, int *temp_to_reg,
+        TCGRegSet allocated_regs)
+{
+    int i, reg;
+    int reg_to_temp_required[TCG_TARGET_NB_REGS];
+    TCGTemp *ts;
+
+    memset(reg_to_temp_required, 0xff, sizeof(int) * TCG_TARGET_NB_REGS);
+    for (i = 0; i < s->nb_globals; i++) {
+        if (temp_to_reg[i] >= 0) {
+            reg_to_temp_required[temp_to_reg[i]] = i;
+        }
+    }
+
+    /* 1. Spill what is not needed.  Don't mind TEMP_VAL_CONST.  This will
+          free some registers. */
+    for (i = 0; i < s->nb_globals; i++) {
+        if (temp_to_reg[i] == -1) {
+            temp_save(s, i, allocated_regs);
+        }
+    }
+
+    /* Let's represent current state of globals-register relations as a
+       directed graph.  Both globals and host registers will be vertices.
+       There is and arc from a register to a global if this global is stored
+       on this register.  There is an arc from a global to a register if this
+       register should contain this global in the end.
+
+       This graph is a set of chains and cycles. */
+
+    /* 2. Reduce chains to single arcs.  This will not decrease emount of free
+          registers. */
+    for (i = 0; i < TCG_TARGET_NB_REGS; i++) {
+        tcg_traverse_reg_chain(s, temp_to_reg, reg_to_temp_required, i);
+        reg = i;
+    }
+
+    /* 3. Handle cycles. */
+    for (i = 0; i < TCG_TARGET_NB_REGS; i++) {
+        if (s->reg_to_temp[i] == -1 || reg_to_temp_required[i] == -1) {
+            continue;
+        }
+        ts = &s->temps[s->reg_to_temp[i]];
+        reg = tcg_get_free_reg(s, tcg_target_available_regs[ts->type],
+                allocated_regs);
+        if (reg == -1) {
+            tcg_reg_free(s, i);
+        } else {
+            tcg_out_mov(s, ts->type, reg, i);
+            ts->reg = reg;
+            s->reg_to_temp[reg] = s->reg_to_temp[i];
+            s->reg_to_temp[i] = -1;
+        }
+        tcg_traverse_reg_chain(s, temp_to_reg, reg_to_temp_required, i);
+    }
+
+    /* 4. Load gloabls from memory. */
+    for (i = 0; i < TCG_TARGET_NB_REGS; i++) {
+        if (s->reg_to_temp[i] == -1 && reg_to_temp_required[i] != -1) {
+            ts = &s->temps[reg_to_temp_required[i]];
+            assert(ts->type == TEMP_VAL_MEM || ts->type == TEMP_VAL_CONST);
+            if (ts->type == TEMP_VAL_CONST) {
+                tcg_out_movi(s, ts->type, i, ts->val);
+            } else {
+                tcg_out_ld(s, ts->type, i, ts->mem_reg, ts->mem_offset);
+            }
+            s->reg_to_temp[i] = reg_to_temp_required[i];
+        }
+    }
+}
+#endif
+
+#if 0
+static void tcg_compute_temp_to_reg(TCGContext *s, int *temp_to_reg)
+{
+    int i;
+    for (i = 0; i < s->nb_globals; i++) {
+        if (!s->temps[i].fixed_reg) {
+            if (s->temps[i].val_type == TEMP_VAL_REG) {
+                temp_to_reg[i] = s->temps[i].reg;
+            } else {
+                temp_to_reg[i] = -1;
+            }
+            assert(s->temps[i].val_type != TEMP_VAL_CONST);
+        }
+    }
+}
+#endif
+
 #ifdef GLOBAL_REG_ALLOC
 
 /*
@@ -3904,6 +4027,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
 #endif
     int i, oi, oi_next, num_insns;
     TCGBasicBlock *bb = NULL;
+    TCGBasicBlock *cur_bb;
 
 #ifdef CONFIG_PROFILER
     {
@@ -3995,6 +4119,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
     s->pool_labels = NULL;
 #endif
 
+    cur_bb = &s->basic_blocks[0];
     if (s->basic_blocks) {
         bb = &s->basic_blocks[0];
         s->cur_bb = bb;
@@ -4015,6 +4140,32 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
 
         TCGOp * const op = &s->gen_op_buf[oi];
         TCGOpcode opc = op->opc;
+
+        if (cur_bb && cur_bb != &s->basic_blocks[op->bb]) {
+            cur_bb++;
+#if 0
+            for (i = 0; i < s->nb_temps; i++) {
+                if (s->temps[i].fixed_reg) {
+                    continue;
+                }
+                if (s->temps[i].val_type == TEMP_VAL_REG) {
+                    s->reg_to_temp[s->temps[i].reg] = -1;
+                }
+                s->temps[i].val_type = TEMP_VAL_MEM;
+            }
+            for (i = 0; i < s->nb_temps; i++) {
+                if (s->temps[i].fixed_reg) {
+                    continue;
+                }
+                if (cur_bb->prealloc_temps_before[i] >= 0) {
+                    s->temps[i].reg = cur_bb->prealloc_temps_before[i];
+                    s->temps[i].val_type = TEMP_VAL_REG;
+                    s->temps[i].mem_coherent = 0;
+                    s->reg_to_temp[s->temps[i].reg] = i;
+                }
+            }
+#endif
+        }
 
         oi_next = op->next;
 #ifdef CONFIG_PROFILER
