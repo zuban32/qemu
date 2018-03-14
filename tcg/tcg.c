@@ -2050,6 +2050,19 @@ static void liveness_pass_1(TCGContext *s)
 
         oi_prev = op->prev;
 
+        if (s->basic_blocks && op->bb > bb_index) {
+            bb_index--;
+            assert(bb_index >= -1);
+            assert(bb_index == -1 ||
+                    s->gen_op_buf[oi_prev].bb == bb_index);
+//                    s->basic_blocks[bb_index].last_insn >= op_index - 1);
+            if (bb_index >= 0) {
+                bb = &s->basic_blocks[bb_index];
+            } else {
+                bb = NULL;
+            }
+        }
+
         switch (opc) {
         case INDEX_op_call:
             {
