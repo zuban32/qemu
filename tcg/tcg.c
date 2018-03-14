@@ -2498,6 +2498,7 @@ static void tcg_build_cfg(TCGContext *s)
     int label_to_bb[512];
     TCGEdge *edge;
     TCGBasicBlock *bb;
+    int tb_need_cfg;
 
     for (oi = s->gen_op_buf[0].next; oi != 0; oi = oi_next) {
 //        fprintf(stderr, "op %d", oi);
@@ -2512,6 +2513,13 @@ static void tcg_build_cfg(TCGContext *s)
         switch(opc) {
         case INDEX_op_set_label:
 //            fprintf(stderr, "Label num = %x\n", arg_label(op->args[0])->id);
+            if (oi > 0
+                    &&    s->gen_op_buf[op->prev].opc != INDEX_op_br
+                    && s->gen_op_buf[op->prev].opc != INDEX_op_exit_tb
+                    && s->gen_op_buf[op->prev].opc != INDEX_op_goto_ptr
+                    ) {
+                tb_need_cfg = 1;
+            }
             label_to_bb[arg_label(op->args[0])->id] = bb_count;
             cur_insn_is_bb_start = 1;
             break;
@@ -2551,6 +2559,12 @@ static void tcg_build_cfg(TCGContext *s)
     }
 
 //    fprintf(stderr, "build cfg mid\n");
+
+    if (!tb_need_cfg) {
+        s->bb_count = 0;
+        s->basic_blocks = NULL;
+        return;
+    }
 
     s->bb_count = bb_count;
 
