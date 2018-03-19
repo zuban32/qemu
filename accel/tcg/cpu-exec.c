@@ -165,7 +165,6 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
 
     cpu->can_do_io = !use_icount;
     ret = tcg_qemu_tb_exec(env, tb_ptr);
-//    fprintf(stderr, "ret = %lx\n", ret);
     cpu->can_do_io = 1;
     last_tb = (TranslationBlock *)(ret & ~TB_EXIT_MASK);
     tb_exit = ret & TB_EXIT_MASK;
@@ -217,7 +216,9 @@ static void cpu_exec_nocache(CPUState *cpu, int max_cycles,
 
     /* execute the generated code */
     trace_exec_tb_nocache(tb, tb->pc);
+    fprintf(stderr, "TB exec\n");
     cpu_tb_exec(cpu, tb);
+    fprintf(stderr, "TB exec end\n");
 
     tb_lock();
     tb_phys_invalidate(tb, -1);
@@ -255,7 +256,9 @@ void cpu_exec_step_atomic(CPUState *cpu)
         cc->cpu_exec_enter(cpu);
         /* execute the generated code */
         trace_exec_tb(tb, pc);
+        fprintf(stderr, "TB exec\n");
         cpu_tb_exec(cpu, tb);
+        fprintf(stderr, "TB exec end\n");
         cc->cpu_exec_exit(cpu);
         parallel_cpus = true;
 

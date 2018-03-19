@@ -9821,6 +9821,9 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
 #ifdef __NR_exit_group
         /* new thread calls */
     case TARGET_NR_exit_group:
+#ifdef CONFIG_PROFILER
+        dump_exec_info(stderr, fprintf);
+#endif
 #ifdef TARGET_GPROF
         _mcleanup();
 #endif

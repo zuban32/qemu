@@ -1277,6 +1277,8 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tb->cflags = cflags;
     tb->trace_vcpu_dstate = *cpu->trace_dstate;
     tcg_ctx->tb_cflags = cflags;
+    tb->need_cfg = 0;
+    tb->side_eff = 0;
 #ifdef ENABLE_BIG_TB
     tb->patch_end = false;
 #endif
@@ -1387,6 +1389,9 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     virt_page2 = (tb->min_pc + tb->size - 1) & TARGET_PAGE_MASK;
     phys_page2 = -1;
     if ((pc & TARGET_PAGE_MASK) != virt_page2) {
+//        fprintf(stderr, "TB [%lx .. %lx]: %lx vs %lx\n",
+//                tb->min_pc, tb->max_pc,
+//                pc & TARGET_PAGE_MASK, virt_page2);
         phys_page2 = get_page_addr_code(env, virt_page2);
     }
     /* As long as consistency of the TB stuff is provided by tb_lock in user
@@ -1806,6 +1811,7 @@ void tb_flush_jmp_cache(CPUState *cpu, target_ulong addr)
     tb_jmp_cache_clear_page(cpu, addr - TARGET_PAGE_SIZE);
     tb_jmp_cache_clear_page(cpu, addr);
 }
+#endif
 
 static void print_qht_statistics(FILE *f, fprintf_function cpu_fprintf,
                                  struct qht_stats hst)
@@ -1852,6 +1858,7 @@ struct tb_tree_stats {
     size_t direct_jmp_count;
     size_t direct_jmp2_count;
     size_t cross_page;
+    size_t big_tb;
 };
 
 static gboolean tb_tree_stats_iter(gpointer key, gpointer value, gpointer data)
@@ -1872,6 +1879,9 @@ static gboolean tb_tree_stats_iter(gpointer key, gpointer value, gpointer data)
         if (tb->jmp_reset_offset[1] != TB_JMP_RESET_OFFSET_INVALID) {
             tst->direct_jmp2_count++;
         }
+    }
+    if (tb->need_cfg && !tb->side_eff) {
+        tst->big_tb++;
     }
     return false;
 }
@@ -1909,6 +1919,7 @@ void dump_exec_info(FILE *f, fprintf_function cpu_fprintf)
                 nb_tbs ? (tst.direct_jmp_count * 100) / nb_tbs : 0,
                 tst.direct_jmp2_count,
                 nb_tbs ? (tst.direct_jmp2_count * 100) / nb_tbs : 0);
+    cpu_fprintf(f, "big TBs             %zu\n", tst.big_tb);
 
     qht_statistics_init(&tb_ctx.htable, &hst);
     print_qht_statistics(f, cpu_fprintf, hst);
@@ -1918,7 +1929,7 @@ void dump_exec_info(FILE *f, fprintf_function cpu_fprintf)
     cpu_fprintf(f, "TB flush count      %u\n",
                 atomic_read(&tb_ctx.tb_flush_count));
     cpu_fprintf(f, "TB invalidate count %d\n", tb_ctx.tb_phys_invalidate_count);
-    cpu_fprintf(f, "TLB flush count     %zu\n", tlb_flush_count());
+//    cpu_fprintf(f, "TLB flush count     %zu\n", tlb_flush_count());
     tcg_dump_info(f, cpu_fprintf);
 
     tb_unlock();
@@ -1929,7 +1940,8 @@ void dump_opcount_info(FILE *f, fprintf_function cpu_fprintf)
     tcg_dump_op_count(f, cpu_fprintf);
 }
 
-#else /* CONFIG_USER_ONLY */
+#ifdef CONFIG_USER_ONLY
+//#else /* CONFIG_USER_ONLY */
 
 void cpu_interrupt(CPUState *cpu, int mask)
 {

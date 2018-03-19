@@ -2209,12 +2209,13 @@ static inline int insn_const_size(TCGMemOp ot)
 
 static inline bool use_goto_tb(DisasContext *s, target_ulong pc)
 {
-#ifndef CONFIG_USER_ONLY
-    return (pc & TARGET_PAGE_MASK) == (s->base.tb->pc & TARGET_PAGE_MASK) ||
-           (pc & TARGET_PAGE_MASK) == (s->pc_start & TARGET_PAGE_MASK);
-#else
-    return true;
-#endif
+//#ifndef CONFIG_USER_ONLY
+    return (pc & TARGET_PAGE_MASK) == (s->base.tb->min_pc & TARGET_PAGE_MASK) ||
+           (pc & TARGET_PAGE_MASK) == (s->pc_start & TARGET_PAGE_MASK) ||
+           (pc & TARGET_PAGE_MASK) == (s->base.tb->pc & TARGET_PAGE_MASK);
+//#else
+//    return true;
+//#endif
 }
 
 static inline void gen_goto_tb(DisasContext *s, int tb_num, target_ulong eip)
@@ -2256,6 +2257,7 @@ static inline void gen_jcc(DisasContext *s, int b,
 //            do_resolve_jumps(s);
 //            gen_eob(s);
         } else {
+            s->base.tb->need_cfg = 1;
             s->jumps_to_resolve[s->cur_jump_to_resolve].pc = val;
 //            s->jumps_to_resolve[s->cur_jump_to_resolve].tb = s->cur_exit++;
             gen_jcc1(s, b^1, l1);
@@ -2839,6 +2841,7 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
             gen_goto_tb(s, s->cur_exit++, eip);
             gen_eob(s);
         } else if (eip != s->base.pc_next - s->cs_base && !tb_num) {
+            s->base.tb->need_cfg = 1;
             s->base.pc_next = eip + s->cs_base;
             s->pc = eip + s->cs_base;
 
@@ -2849,6 +2852,7 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
                 s->base.tb->min_pc = s->pc;
             }
         } else {
+            s->base.tb->need_cfg = 1;
             // case of "repz <op>" instruction needs jumps resolution instead
             s->jumps_to_resolve[s->cur_jump_to_resolve].place = tcg_ctx->gen_next_op_idx-1;
             s->jumps_to_resolve[s->cur_jump_to_resolve].pc = eip;
