@@ -3121,10 +3121,13 @@ static void temp_load(TCGContext *, TCGTemp *, TCGRegSet, TCGRegSet);
 static void temp_free_or_dead(TCGContext *s, TCGTemp *ts, int free_or_dead)
 {
     if (ts->fixed_reg) {
+        fprintf(stderr, "free_or_dead: fixed reg\n");
         return;
     }
     if (ts->val_type == TEMP_VAL_REG) {
         s->reg_to_temp[ts->reg] = NULL;
+        fprintf(stderr, "free_or_dead: Syncing temp %lu (reg = %d)\n",
+                temp_idx(ts), ts->reg);
     }
     if (free_or_dead < 0
                     || ts->temp_local
@@ -3143,6 +3146,7 @@ static void temp_free_or_dead(TCGContext *s, TCGTemp *ts, int free_or_dead)
 /* Mark a temporary as dead.  */
 static inline void temp_dead(TCGContext *s, TCGTemp *ts)
 {
+
     temp_free_or_dead(s, ts, 1);
 }
 
@@ -3153,7 +3157,9 @@ static inline void temp_dead(TCGContext *s, TCGTemp *ts)
 static void temp_sync(TCGContext *s, TCGTemp *ts,
                       TCGRegSet allocated_regs, int free_or_dead)
 {
+    fprintf(stderr, "temp %lu sync (reg = %d)\n", temp_idx(ts), ts->reg);
     if (ts->fixed_reg) {
+        fprintf(stderr, "sync: fixed reg\n");
         return;
     }
     if (!ts->mem_coherent) {
@@ -3168,18 +3174,22 @@ static void temp_sync(TCGContext *s, TCGTemp *ts,
             if (free_or_dead
                 && tcg_out_sti(s, ts->type, ts->val,
                                ts->mem_base->reg, ts->mem_offset)) {
+                fprintf(stderr, "sync: %s\n", free_or_dead < 0 ? "free" : "dead");
                 break;
             }
+            fprintf(stderr, "sync: temp_load\n");
             temp_load(s, ts, tcg_target_available_regs[ts->type],
                       allocated_regs);
             /* fallthrough */
 
         case TEMP_VAL_REG:
+            fprintf(stderr, "sync: on reg\n");
             tcg_out_st(s, ts->type, ts->reg,
                        ts->mem_base->reg, ts->mem_offset);
             break;
 
         case TEMP_VAL_MEM:
+            fprintf(stderr, "sync: already\n");
             break;
 
         case TEMP_VAL_DEAD:
@@ -3187,6 +3197,8 @@ static void temp_sync(TCGContext *s, TCGTemp *ts,
             tcg_abort();
         }
         ts->mem_coherent = 1;
+    } else {
+        fprintf(stderr, "sync: mem coherent\n");
     }
     if (free_or_dead) {
         temp_free_or_dead(s, ts, free_or_dead);
@@ -3198,7 +3210,10 @@ static void tcg_reg_free(TCGContext *s, TCGReg reg, TCGRegSet allocated_regs)
 {
     TCGTemp *ts = s->reg_to_temp[reg];
     if (ts != NULL) {
+        fprintf(stderr, "Freeing reg %d (temp %lu)\n", reg, temp_idx(ts));
         temp_sync(s, ts, allocated_regs, -1);
+    } else {
+        fprintf(stderr, "Freeing reg %d (no temp)\n", reg);
     }
 }
 
@@ -3233,6 +3248,7 @@ static TCGReg tcg_reg_alloc_hint(TCGContext *s, TCGRegSet desired_regs,
 #ifdef CONFIG_PROFILER
 //            spill_cause = SPILL_REAL;
 #endif
+            fprintf(stderr, "Hint1: reg free\n");
             tcg_reg_free(s, hint, allocated_regs);
             return hint;
         }
@@ -3242,6 +3258,7 @@ static TCGReg tcg_reg_alloc_hint(TCGContext *s, TCGRegSet desired_regs,
     for(i = 0; i < n; i++) {
         reg = order[i];
         if (tcg_regset_test_reg(reg_ct, reg)) {
+            fprintf(stderr, "Hint2: reg free\n");
             tcg_reg_free(s, reg, allocated_regs);
             return reg;
         }
@@ -3267,8 +3284,9 @@ static int tcg_reg_alloc(TCGContext *s, TCGRegSet desired_regs,
 static void temp_load(TCGContext *s, TCGTemp *ts, TCGRegSet desired_regs,
                       TCGRegSet allocated_regs)
 {
-    TCGReg reg;
+    TCGReg reg = 0;
     int idx = temp_idx(ts);
+    fprintf(stderr, "load: Loading temp %lu onto reg %d\n", temp_idx(ts), reg);
 
     switch (ts->val_type) {
     case TEMP_VAL_REG:
@@ -3392,6 +3410,7 @@ static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs,
 #ifdef CONFIG_PROFILER
 //                    spill_cause = SPILL_BB_END;
 #endif
+                    fprintf(stderr, "BB end: sync\n");
                     temp_sync(s, &s->temps[i], allocated_regs, -1);
                     temp_save(s, &s->temps[i], allocated_regs);
                 } else {
@@ -3422,6 +3441,7 @@ static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs,
 #ifdef CONFIG_PROFILER
 //                    spill_cause = SPILL_BB_END;
 #endif
+                    fprintf(stderr, "BB_end: reg free\n");
                     tcg_reg_free(s, ts->reg, allocated_regs);
                     reg = tcg_reg_chain_unwind(s, i, reg_to_temp);
                 } else {
@@ -3448,12 +3468,16 @@ static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs,
                     s->reg_to_temp[i] = &s->temps[reg_to_temp[i]];
                     ts->val_type = TEMP_VAL_REG;
                     ts->reg = i;
+                    fprintf(stderr, "bb_end1: Loading temp %lu onto reg %d\n",
+                            temp_idx(ts), i);
                     break;
                 case TEMP_VAL_MEM:
                     tcg_out_ld(s, ts->type, i, ts->mem_base->reg, ts->mem_offset);
                     s->reg_to_temp[i] = &s->temps[reg_to_temp[i]];
                     ts->val_type = TEMP_VAL_REG;
                     ts->reg = i;
+                    fprintf(stderr, "bb_end2: Loading temp %lu onto reg %d\n",
+                            temp_idx(ts), i);
                     break;
                 case TEMP_VAL_DEAD:
                     /* TODO: !!! */
@@ -3485,6 +3509,7 @@ static void tcg_reg_alloc_do_movi(TCGContext *s, TCGTemp *ots,
     ots->val = val;
     ots->mem_coherent = 0;
     if (NEED_SYNC_ARG(0)) {
+        fprintf(stderr, "Movi: sync\n");
         temp_sync(s, ots, s->reserved_regs, IS_DEAD_ARG(0));
     } else if (IS_DEAD_ARG(0)) {
         temp_dead(s, ots);
@@ -3529,6 +3554,7 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOp *op)
        the SOURCE value into its own register first, that way we
        don't have to reload SOURCE the next time it is used. */
     if (ts->val_type == TEMP_VAL_MEM) {
+        fprintf(stderr, "MOV: temp_load\n");
         temp_load(s, ts, tcg_target_available_regs[itype], allocated_regs);
     }
 
@@ -3565,9 +3591,12 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOp *op)
             tcg_out_mov(s, otype, ots->reg, ts->reg);
         }
         ots->val_type = TEMP_VAL_REG;
+        fprintf(stderr, "mov: Loading temp %lu onto reg %d\n",
+                temp_idx(ots), ots->reg);
         ots->mem_coherent = 0;
         s->reg_to_temp[ots->reg] = ots;
         if (NEED_SYNC_ARG(0)) {
+            fprintf(stderr, "Mov: sync\n");
             temp_sync(s, ots, allocated_regs, 0);
         }
     }
@@ -3642,6 +3671,8 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op, TCGBasicBlock *cur_
             tcg_out_ld(s, ts->type, reg, ts->mem_base->reg, ts->mem_offset);
             ts->val_type = TEMP_VAL_REG;
             ts->reg = reg;
+            fprintf(stderr, "op_input1: Loading temp %lu onto reg %d\n",
+                    temp_idx(ts), reg);
             ts->mem_coherent = 1;
             s->reg_to_temp[reg] = ts;
         } else if(ts->val_type == TEMP_VAL_CONST) {
@@ -3652,6 +3683,8 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op, TCGBasicBlock *cur_
             tcg_out_movi(s, ts->type, reg, ts->val);
             ts->val_type = TEMP_VAL_REG;
             ts->reg = reg;
+            fprintf(stderr, "op_input2: Loading temp %lu onto reg %d\n",
+                    temp_idx(ts), reg);
             ts->mem_coherent = 0;
             s->reg_to_temp[reg] = ts;
 //            temp_load(s, ts, arg_ct->u.regs, i_allocated_regs);
@@ -3738,6 +3771,7 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op, TCGBasicBlock *cur_
             /* XXX: permit generic clobber register list ? */ 
             for (i = 0; i < TCG_TARGET_NB_REGS; i++) {
                 if (tcg_regset_test_reg(tcg_target_call_clobber_regs, i)) {
+                    fprintf(stderr, "Clobber: reg free\n");
                     tcg_reg_free(s, i, i_allocated_regs);
                 }
             }
@@ -3780,6 +3814,8 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op, TCGBasicBlock *cur_
                 }
                 ts->val_type = TEMP_VAL_REG;
                 ts->reg = reg;
+                fprintf(stderr, "op output: Loading temp %lu onto reg %d\n",
+                        temp_idx(ts), reg);
                 /* temp value is modified, so the value kept in memory is
                    potentially not the same */
                 ts->mem_coherent = 0;
@@ -3801,6 +3837,7 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op, TCGBasicBlock *cur_
             tcg_out_mov(s, ts->type, ts->reg, reg);
         }
         if (NEED_SYNC_ARG(i)) {
+            fprintf(stderr, "RAOp output: sync\n");
             temp_sync(s, ts, o_allocated_regs, IS_DEAD_ARG(i));
         } else if (IS_DEAD_ARG(i)) {
             temp_dead(s, ts);
@@ -3856,6 +3893,7 @@ static void tcg_reg_alloc_call(TCGContext *s, TCGOp *op)
 #endif
         if (arg != TCG_CALL_DUMMY_ARG) {
             ts = arg_temp(arg);
+            fprintf(stderr, "CALL1: temp_load\n");
             temp_load(s, ts, tcg_target_available_regs[ts->type],
                       s->reserved_regs);
             tcg_out_st(s, ts->type, ts->reg, TCG_REG_CALL_STACK, stack_offset);
@@ -3872,6 +3910,7 @@ static void tcg_reg_alloc_call(TCGContext *s, TCGOp *op)
         if (arg != TCG_CALL_DUMMY_ARG) {
             ts = arg_temp(arg);
             reg = tcg_target_call_iarg_regs[i];
+            fprintf(stderr, "Call1: reg free\n");
             tcg_reg_free(s, reg, allocated_regs);
 
             if (ts->val_type == TEMP_VAL_REG) {
@@ -3882,6 +3921,7 @@ static void tcg_reg_alloc_call(TCGContext *s, TCGOp *op)
                 TCGRegSet arg_set = 0;
 
                 tcg_regset_set_reg(arg_set, reg);
+                fprintf(stderr, "CALL2: temp_load\n");
                 temp_load(s, ts, arg_set, allocated_regs);
             }
 
@@ -3899,6 +3939,7 @@ static void tcg_reg_alloc_call(TCGContext *s, TCGOp *op)
     /* clobber call registers */
     for (i = 0; i < TCG_TARGET_NB_REGS; i++) {
         if (tcg_regset_test_reg(tcg_target_call_clobber_regs, i)) {
+            fprintf(stderr, "Call2: reg free\n");
             tcg_reg_free(s, i, allocated_regs);
         }
     }
@@ -3932,9 +3973,12 @@ static void tcg_reg_alloc_call(TCGContext *s, TCGOp *op)
             }
             ts->val_type = TEMP_VAL_REG;
             ts->reg = reg;
+            fprintf(stderr, "call: Loading temp %lu onto reg %d\n",
+                    temp_idx(ts), reg);
             ts->mem_coherent = 0;
             s->reg_to_temp[reg] = ts;
             if (NEED_SYNC_ARG(i)) {
+                fprintf(stderr, "Call: sync\n");
                 temp_sync(s, ts, allocated_regs, IS_DEAD_ARG(i));
             } else if (IS_DEAD_ARG(i)) {
                 temp_dead(s, ts);
@@ -4153,7 +4197,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
                     s->temps[i].mem_coherent = 0;
                     s->reg_to_temp[s->temps[i].reg] = &s->temps[i];
                 } else if (bb->prealloc_temps_before[i] >= 0) {
-                    fprintf(stderr, "[Fixed]Allocating reg %d for temp %d\n",
+                    fprintf(stderr, "[Fixed]Do not allocating reg %d for temp %d\n",
                             bb->prealloc_temps_before[i], i);
                 }
             }
@@ -4190,7 +4234,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
             }
 #endif
         }
-//        fprintf(stderr, "Op %d: bb_ind = %ld\n", oi, cur_bb - s->basic_blocks);
+        fprintf(stderr, "Op %d: bb_ind = %ld\n", oi, cur_bb - s->basic_blocks);
 
         oi_next = op->next;
 //        fprintf(stderr, "Op = %d, next = %d\n", oi, oi_next);
