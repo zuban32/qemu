@@ -3146,7 +3146,7 @@ static void temp_free_or_dead(TCGContext *s, TCGTemp *ts, int free_or_dead)
 /* Mark a temporary as dead.  */
 static inline void temp_dead(TCGContext *s, TCGTemp *ts)
 {
-
+    fprintf(stderr, "Temp %lu dead\n", temp_idx(ts));
     temp_free_or_dead(s, ts, 1);
 }
 
@@ -3316,8 +3316,11 @@ static void temp_save(TCGContext *s, TCGTemp *ts, TCGRegSet allocated_regs)
 {
     /* The liveness analysis already ensures that globals are back
        in memory. Keep an tcg_debug_assert for safety. */
+    if (ts->val_type != TEMP_VAL_MEM && !ts->fixed_reg) {
+        fprintf(stderr, "Fail sync temp %lu, reg = %d\n", temp_idx(ts), ts->reg);
+    }
+//    temp_sync(s, ts, allocated_regs, -1);
     tcg_debug_assert(ts->val_type == TEMP_VAL_MEM || ts->fixed_reg);
-//    temp_sync(s, ts, allocated_regs, 0);
 }
 
 /* save globals to their canonical location and assume they can be
@@ -3341,7 +3344,6 @@ static void sync_globals(TCGContext *s, TCGRegSet allocated_regs)
 
     for (i = 0, n = s->nb_globals; i < n; i++) {
         TCGTemp *ts = &s->temps[i];
-//        temp_sync(s, ts, allocated_regs, -1);
         if (ts->val_type == TEMP_VAL_REG && !ts->fixed_reg && !ts->mem_coherent) {
             fprintf(stderr, "Fail sync global %d, reg = %d\n", i, ts->reg);
         }
@@ -3406,12 +3408,13 @@ static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs,
             if (cur_bb->prealloc_temps_after[i] >= 0) {
                 reg_to_temp[cur_bb->prealloc_temps_after[i]] = i;
             } else {
-                if (i < s->nb_globals || s->temps[i].temp_local) {
+                if ((i < s->nb_globals || s->temps[i].temp_local)
+                        && s->temps[i].val_type != TEMP_VAL_DEAD) {
 #ifdef CONFIG_PROFILER
 //                    spill_cause = SPILL_BB_END;
 #endif
                     fprintf(stderr, "BB end: sync\n");
-                    temp_sync(s, &s->temps[i], allocated_regs, -1);
+//                    temp_sync(s, &s->temps[i], allocated_regs, -1);
                     temp_save(s, &s->temps[i], allocated_regs);
                 } else {
                     ts = &s->temps[i];
@@ -3481,6 +3484,7 @@ static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs,
                     break;
                 case TEMP_VAL_DEAD:
                     /* TODO: !!! */
+                    assert(0);
                     break;
                 default:
                     assert(0);
