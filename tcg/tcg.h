@@ -736,7 +736,6 @@ struct TCGContext {
     TCGBasicBlock *cur_bb;
     int tb_with_several_bb;
     int bb_count;
-    int side_effects;
 };
 
 extern TCGContext tcg_init_ctx;
