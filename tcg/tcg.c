@@ -2061,8 +2061,10 @@ static void tcg_la_bb_end(TCGContext *s, TCGOpcode opc, TCGBasicBlock *bb)
         }
     } else {
         for (i = 0; i < ng; ++i) {
-            if (bb->prealloc_temps_after[i] < 0)
+            if (bb->prealloc_temps_after[i] < 0) {
+                fprintf(stderr, "Global %d dead\n", i);
                 s->temps[i].state = TS_DEAD | TS_MEM;
+            }
         }
         for (i = ng; i < nt; ++i) {
             if (bb->prealloc_temps_after[i] < 0)
@@ -2070,6 +2072,336 @@ static void tcg_la_bb_end(TCGContext *s, TCGOpcode opc, TCGBasicBlock *bb)
                                  ? TS_DEAD | TS_MEM
                                  : TS_DEAD);
         }
+    }
+}
+
+static void liveness_pass_0(TCGContext *s, TranslationBlock *tb)
+{
+
+    int nb_globals = s->nb_globals;
+    int oi, oi_prev;
+
+    int bb_index = s->bb_count - 1;
+//    fprintf(stderr, "bb_count = %d\n", s->bb_count);
+    TCGBasicBlock *bb = s->basic_blocks ? &s->basic_blocks[bb_index] : NULL;
+    int nb_call_clobber = tcg_target_call_clobber_regs_count;
+    int reg_pressure = 0;
+//    TCGArg arg;
+
+    tcg_la_func_end(s);
+
+    for (oi = s->gen_op_buf[0].prev; oi != 0; oi = oi_prev) {
+        int i, nb_iargs, nb_oargs;
+        TCGOpcode opc_new, opc_new2;
+        bool have_opc_new2;
+        TCGLifeData arg_life = 0;
+        TCGTemp *arg_ts;
+
+        TCGOp * const op = &s->gen_op_buf[oi];
+        TCGOpcode opc = op->opc;
+        const TCGOpDef *def = &tcg_op_defs[opc];
+
+        oi_prev = op->prev;
+
+        if (s->basic_blocks && op->bb > bb_index) {
+            bb_index--;
+            assert(bb_index >= -1);
+            assert(bb_index == -1 ||
+                    s->gen_op_buf[oi_prev].bb == bb_index);
+//                    s->basic_blocks[bb_index].last_insn >= op_index - 1);
+            if (bb_index >= 0) {
+                bb = &s->basic_blocks[bb_index];
+            } else {
+                bb = NULL;
+            }
+        }
+
+//        fprintf(stderr, "Op = %d, bb_index = %d\n", oi, bb_index);
+
+        switch (opc) {
+        case INDEX_op_call:
+            {
+                int call_flags;
+
+                nb_oargs = op->callo;
+                nb_iargs = op->calli;
+                call_flags = op->args[nb_oargs + nb_iargs + 1];
+
+                /* pure functions can be removed if their result is unused */
+                if (call_flags & TCG_CALL_NO_SIDE_EFFECTS) {
+                    for (i = 0; i < nb_oargs; i++) {
+                        arg_ts = arg_temp(op->args[i]);
+                        if (arg_ts->state != TS_DEAD) {
+                            goto do_not_remove_call;
+                        }
+                    }
+                    goto do_remove;
+                } else {
+                do_not_remove_call:
+                    /* compute register pressure in this instruction */
+                    for (i = nb_oargs; i < nb_oargs + nb_iargs; i++) {
+//                        arg = op->args[i];
+                        arg_ts = arg_temp(op->args[i]);
+                        long idx = temp_idx(arg_ts);
+                        if ((arg_ts->state & TS_DEAD) && idx >= s->nb_globals
+                                && !arg_ts->temp_local) {
+                            reg_pressure++;
+                        }
+                        if (bb && idx < s->nb_globals) {
+                            set_bit(idx, bb->used_temps);
+                        }
+                    }
+                    if (bb && bb->max_reg_pressure <
+                            reg_pressure + nb_call_clobber) {
+                        bb->max_reg_pressure = reg_pressure + nb_call_clobber;
+                    }
+                    for (i = 0; i < nb_oargs; i++) {
+//                        arg = op->args[i];
+                        arg_ts = arg_temp(op->args[i]);
+                        long idx = temp_idx(arg_ts);
+                        if (!(arg_ts->state & TS_DEAD) && idx >= s->nb_globals
+                                && !arg_ts->temp_local) {
+                            reg_pressure--;
+                        }
+                        if (bb && idx < s->nb_globals) {
+                            set_bit(idx, bb->used_temps);
+                        }
+                    }
+
+                    /* output args are dead */
+                    for (i = 0; i < nb_oargs; i++) {
+                        arg_ts = arg_temp(op->args[i]);
+                        if (arg_ts->state & TS_DEAD) {
+                            arg_life |= DEAD_ARG << i;
+                        }
+                        if (arg_ts->state & TS_MEM) {
+                            arg_life |= SYNC_ARG << i;
+                        }
+                        arg_ts->state = TS_DEAD;
+                    }
+
+                    if (!(call_flags & (TCG_CALL_NO_WRITE_GLOBALS |
+                                        TCG_CALL_NO_READ_GLOBALS))) {
+                        /* globals should go back to memory */
+                        for (i = 0; i < nb_globals; i++) {
+                            s->temps[i].state = TS_DEAD | TS_MEM;
+                        }
+                    } else if (!(call_flags & TCG_CALL_NO_READ_GLOBALS)) {
+                        /* globals should be synced to memory */
+                        for (i = 0; i < nb_globals; i++) {
+                            s->temps[i].state |= TS_MEM;
+                        }
+                    }
+
+                    /* record arguments that die in this helper */
+                    for (i = nb_oargs; i < nb_iargs + nb_oargs; i++) {
+                        arg_ts = arg_temp(op->args[i]);
+                        if (arg_ts && arg_ts->state & TS_DEAD) {
+                            arg_life |= DEAD_ARG << i;
+                        }
+                    }
+                    /* input arguments are live for preceding opcodes */
+                    for (i = nb_oargs; i < nb_iargs + nb_oargs; i++) {
+                        arg_ts = arg_temp(op->args[i]);
+                        if (arg_ts) {
+                            arg_ts->state &= ~TS_DEAD;
+                        }
+                    }
+                }
+            }
+            break;
+        case INDEX_op_insn_start:
+            break;
+        case INDEX_op_discard:
+            /* mark the temporary as dead */
+            if (!(arg_temp(op->args[0])->state & TS_DEAD) &&
+                    temp_idx(arg_temp(op->args[0])) >= s->nb_globals) {
+                reg_pressure--;
+            }
+            arg_temp(op->args[0])->state = TS_DEAD;
+            break;
+
+        case INDEX_op_add2_i32:
+            opc_new = INDEX_op_add_i32;
+            goto do_addsub2;
+        case INDEX_op_sub2_i32:
+            opc_new = INDEX_op_sub_i32;
+            goto do_addsub2;
+        case INDEX_op_add2_i64:
+            opc_new = INDEX_op_add_i64;
+            goto do_addsub2;
+        case INDEX_op_sub2_i64:
+            opc_new = INDEX_op_sub_i64;
+        do_addsub2:
+            nb_iargs = 4;
+            nb_oargs = 2;
+            /* Test if the high part of the operation is dead, but not
+               the low part.  The result can be optimized to a simple
+               add or sub.  This happens often for x86_64 guest when the
+               cpu mode is set to 32 bit.  */
+            if (arg_temp(op->args[1])->state == TS_DEAD) {
+                if (arg_temp(op->args[0])->state == TS_DEAD) {
+                    goto do_remove;
+                }
+                /* Replace the opcode and adjust the args in place,
+                   leaving 3 unused args at the end.  */
+                op->opc = opc = opc_new;
+                op->args[1] = op->args[2];
+                op->args[2] = op->args[4];
+                /* Fall through and mark the single-word operation live.  */
+                nb_iargs = 2;
+                nb_oargs = 1;
+            }
+            goto do_not_remove;
+
+        case INDEX_op_mulu2_i32:
+            opc_new = INDEX_op_mul_i32;
+            opc_new2 = INDEX_op_muluh_i32;
+            have_opc_new2 = TCG_TARGET_HAS_muluh_i32;
+            goto do_mul2;
+        case INDEX_op_muls2_i32:
+            opc_new = INDEX_op_mul_i32;
+            opc_new2 = INDEX_op_mulsh_i32;
+            have_opc_new2 = TCG_TARGET_HAS_mulsh_i32;
+            goto do_mul2;
+        case INDEX_op_mulu2_i64:
+            opc_new = INDEX_op_mul_i64;
+            opc_new2 = INDEX_op_muluh_i64;
+            have_opc_new2 = TCG_TARGET_HAS_muluh_i64;
+            goto do_mul2;
+        case INDEX_op_muls2_i64:
+            opc_new = INDEX_op_mul_i64;
+            opc_new2 = INDEX_op_mulsh_i64;
+            have_opc_new2 = TCG_TARGET_HAS_mulsh_i64;
+            goto do_mul2;
+        do_mul2:
+            nb_iargs = 2;
+            nb_oargs = 2;
+            if (arg_temp(op->args[1])->state == TS_DEAD) {
+                if (arg_temp(op->args[0])->state == TS_DEAD) {
+                    /* Both parts of the operation are dead.  */
+                    goto do_remove;
+                }
+                /* The high part of the operation is dead; generate the low. */
+                op->opc = opc = opc_new;
+                op->args[1] = op->args[2];
+                op->args[2] = op->args[3];
+            } else if (arg_temp(op->args[0])->state == TS_DEAD && have_opc_new2) {
+                /* The low part of the operation is dead; generate the high. */
+                op->opc = opc = opc_new2;
+                op->args[0] = op->args[1];
+                op->args[1] = op->args[2];
+                op->args[2] = op->args[3];
+            } else {
+                goto do_not_remove;
+            }
+            /* Mark the single-word operation live.  */
+            nb_oargs = 1;
+            goto do_not_remove;
+
+        case INDEX_op_set_label:
+            reg_pressure = 0;
+        default:
+            /* XXX: optimize by hardcoding common cases (e.g. triadic ops) */
+            nb_iargs = def->nb_iargs;
+            nb_oargs = def->nb_oargs;
+
+            /* Test if the operation can be removed because all
+               its outputs are dead. We assume that nb_oargs == 0
+               implies side effects */
+            if (!(def->flags & TCG_OPF_SIDE_EFFECTS) && nb_oargs != 0) {
+                for (i = 0; i < nb_oargs; i++) {
+                    if (arg_temp(op->args[i])->state != TS_DEAD) {
+                        goto do_not_remove;
+                    }
+                }
+            do_remove:
+                printf("!\n");
+//                tcg_op_remove(s, op);
+            } else {
+            do_not_remove:
+                /* compute register pressure in this instruction */
+                for (i = nb_oargs; i < nb_oargs + nb_iargs; i++) {
+//                    arg = op->args[i];
+                    arg_ts = arg_temp(op->args[i]);
+                    long idx = temp_idx(arg_ts);
+                    if ((arg_ts->state & TS_DEAD) && idx >= s->nb_globals
+                            && !arg_ts->temp_local) {
+                        reg_pressure++;
+                    }
+                    if (bb && idx < s->nb_globals) {
+                        set_bit(idx, bb->used_temps);
+                    }
+                }
+                if (def->flags & TCG_OPF_CALL_CLOBBER) {
+                    if (bb && bb->max_reg_pressure <
+                            reg_pressure + nb_call_clobber) {
+                        bb->max_reg_pressure = reg_pressure + nb_call_clobber;
+                    }
+                } else {
+                    if (bb && bb->max_reg_pressure < reg_pressure) {
+                        bb->max_reg_pressure = reg_pressure;
+                    }
+                }
+                for (i = 0; i < nb_oargs; i++) {
+//                    arg = op->args[i];
+                    arg_ts = arg_temp(op->args[i]);
+                    long idx = temp_idx(arg_ts);
+                    if (!(arg_ts->state & TS_DEAD) && idx >= s->nb_globals
+                            && !arg_ts->temp_local) {
+                        reg_pressure--;
+                    }
+                    if (bb && idx < s->nb_globals) {
+                        set_bit(idx, bb->used_temps);
+                    }
+                }
+
+                /* output args are dead */
+                for (i = 0; i < nb_oargs; i++) {
+                    arg_ts = arg_temp(op->args[i]);
+                    if (arg_ts->state & TS_DEAD) {
+                        arg_life |= DEAD_ARG << i;
+                    }
+                    if (arg_ts->state & TS_MEM) {
+                        arg_life |= SYNC_ARG << i;
+                    }
+                    arg_ts->state = TS_DEAD;
+                }
+
+                /* if end of basic block, update */
+                if (def->flags & TCG_OPF_BB_END) {
+                    fprintf(stderr, "Liveness [%d]: bb_end\n", oi);
+                    tcg_la_bb_end(s, opc, bb);
+                } else if (def->flags & TCG_OPF_SIDE_EFFECTS) {
+                    /* globals should be synced to memory */
+                    for (i = 0; i < nb_globals; i++) {
+                        s->temps[i].state |= TS_MEM;
+                    }
+                }
+
+                /* record arguments that die in this opcode */
+                for (i = nb_oargs; i < nb_oargs + nb_iargs; i++) {
+                    arg_ts = arg_temp(op->args[i]);
+                    if (arg_ts->state & TS_DEAD) {
+                        arg_life |= DEAD_ARG << i;
+                    }
+                }
+                /* input arguments are live for preceding opcodes */
+                for (i = nb_oargs; i < nb_oargs + nb_iargs; i++) {
+                    arg_temp(op->args[i])->state &= ~TS_DEAD;
+                }
+                TCGOp *prev_op = &s->gen_op_buf[oi_prev];
+                if (bb && prev_op->bb != bb_index && prev_op->bb != -1) {
+                    bb->used_temps_count =
+                        bitmap_count(bb->used_temps, TCG_MAX_TEMPS);
+                    bb--;
+                    reg_pressure = 0;
+                    bb_index--;
+                }
+            }
+            break;
+        }
+//        op->life = arg_life;
     }
 }
 
@@ -2369,14 +2701,8 @@ static void liveness_pass_1(TCGContext *s, TranslationBlock *tb)
 
                 /* if end of basic block, update */
                 if (def->flags & TCG_OPF_BB_END) {
-//                    if (tb->need_cfg && (
-//                            opc != INDEX_op_exit_tb
-//                            )) {
-//                        tcg_la_bb_end(s);
-//                    } else {
-                        tcg_la_bb_end(s, opc, bb);
-//                    }
-//                    reg_pressure = 0;
+                    fprintf(stderr, "Liveness [%d]: bb_end\n", oi);
+                    tcg_la_bb_end(s, opc, bb);
                 } else if (def->flags & TCG_OPF_SIDE_EFFECTS) {
                     /* globals should be synced to memory */
                     for (i = 0; i < nb_globals; i++) {
@@ -3835,6 +4161,7 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op, TCGBasicBlock *cur_
     /* mark dead temporaries and free the associated registers */
     for (i = nb_oargs; i < nb_oargs + nb_iargs; i++) {
         if (IS_DEAD_ARG(i)) {
+            fprintf(stderr, "RAOp: temp %lu dead\n", temp_idx(arg_temp(op->args[i])));
             temp_dead(s, arg_temp(op->args[i]));
         }
     }
@@ -4247,7 +4574,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
 //        }
 //    }
     tcg_build_cfg(s, tb);
-    liveness_pass_1(s, tb);
+    liveness_pass_0(s, tb);
 
     if (s->nb_indirects > 0) {
 #ifdef DEBUG_DISAS
@@ -4267,10 +4594,11 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
 //        }
     }
 
+    tcg_global_reg_alloc(s);
 #ifdef CONFIG_PROFILER
     atomic_set(&prof->la_time, prof->la_time + profile_getclock());
 #endif
-    tcg_global_reg_alloc(s);
+    liveness_pass_1(s, tb);
 
 #ifdef DEBUG_DISAS
     if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP_OPT)
