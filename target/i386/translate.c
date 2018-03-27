@@ -2209,13 +2209,24 @@ static inline int insn_const_size(TCGMemOp ot)
 
 static inline bool use_goto_tb(DisasContext *s, target_ulong pc)
 {
-//#ifndef CONFIG_USER_ONLY
+#ifndef CONFIG_USER_ONLY
     return (pc & TARGET_PAGE_MASK) == (s->base.tb->min_pc & TARGET_PAGE_MASK) ||
            (pc & TARGET_PAGE_MASK) == (s->pc_start & TARGET_PAGE_MASK) ||
            (pc & TARGET_PAGE_MASK) == (s->base.tb->pc & TARGET_PAGE_MASK);
-//#else
-//    return true;
-//#endif
+#else
+    return true;
+#endif
+}
+
+static bool crosses_page(DisasContext *s, target_ulong pc)
+{
+#ifdef CONFIG_USER_ONLY
+    return (pc & TARGET_PAGE_MASK) != (s->base.tb->min_pc & TARGET_PAGE_MASK);
+//          || (pc & TARGET_PAGE_MASK) == (s->pc_start & TARGET_PAGE_MASK)
+//          || (pc & TARGET_PAGE_MASK) == (s->base.tb->pc & TARGET_PAGE_MASK);
+#else
+    return !use_goto_tb(s, pc);
+#endif
 }
 
 static inline void gen_goto_tb(DisasContext *s, int tb_num, target_ulong eip)
@@ -2246,7 +2257,7 @@ static inline void gen_jcc(DisasContext *s, int b,
         l1 = gen_new_label();
         s->cur_jumps--;
 //        fprintf(stderr, "cur_jumps = %d\n", s->cur_jumps);
-        if (s->cur_jumps < 0 || !use_goto_tb(s, val)) {
+        if (s->cur_jumps < 0 || crosses_page(s, val)) {
             gen_jcc1(s, b, l1);
 
             gen_goto_tb(s, s->cur_exit++, next_eip);
@@ -2671,7 +2682,7 @@ static void do_resolve_jumps(DisasContext *s)
     if(!s->jmp_opt) {
         tcg_gen_br(exit_l);
     }
-    if(!s->jumps_resolved) {
+    if(!s->jumps_resolved && s->base.tb->need_cfg) {
         s->jumps_resolved = true;
         int patch_prev = -1;
 #ifdef DEBUG_BIG_TB
@@ -2837,7 +2848,7 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
             s->base.tb->min_pc = s->pc;
         }
         s->cur_jumps--;
-        if (s->cur_jumps < 0 || !use_goto_tb(s, s->cs_base+eip)) {
+        if (s->cur_jumps < 0 || crosses_page(s, s->cs_base+eip)) {
             gen_goto_tb(s, s->cur_exit++, eip);
             gen_eob(s);
         } else if (eip != s->base.pc_next - s->cs_base && !tb_num) {

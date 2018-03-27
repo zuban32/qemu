@@ -1278,7 +1278,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tb->trace_vcpu_dstate = *cpu->trace_dstate;
     tcg_ctx->tb_cflags = cflags;
     tb->need_cfg = 0;
-    tb->side_eff = 0;
 #ifdef ENABLE_BIG_TB
     tb->patch_end = false;
 #endif
@@ -1298,9 +1297,8 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     trace_translate_block(tb, tb->pc, tb->tc.ptr);
 
     /* generate machine code */
-    for(int i = 0; i < 2*(MAX_INNER_JUMPS + 1); i+=2) {
-        tb->jmp_reset_offset[0+i] = TB_JMP_RESET_OFFSET_INVALID;
-        tb->jmp_reset_offset[1+i] = TB_JMP_RESET_OFFSET_INVALID;
+    for(int i = 0; i < 2*(MAX_INNER_JUMPS + 1); i++) {
+        tb->jmp_reset_offset[i] = TB_JMP_RESET_OFFSET_INVALID;
     }
     tcg_ctx->tb_jmp_reset_offset = tb->jmp_reset_offset;
     if (TCG_TARGET_HAS_direct_jump) {
@@ -1337,6 +1335,8 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     atomic_set(&prof->code_in_len, prof->code_in_len + tb->size);
     atomic_set(&prof->code_out_len, prof->code_out_len + gen_code_size);
     atomic_set(&prof->search_out_len, prof->search_out_len + search_size);
+    atomic_set(&prof->ld_count, tcg_ctx->gen_lds);
+    atomic_set(&prof->st_count, tcg_ctx->gen_sts);
 #endif
 
 #ifdef DEBUG_DISAS
@@ -1880,7 +1880,7 @@ static gboolean tb_tree_stats_iter(gpointer key, gpointer value, gpointer data)
             tst->direct_jmp2_count++;
         }
     }
-    if (tb->need_cfg && !tb->side_eff) {
+    if (tb->need_cfg) {
         tst->big_tb++;
     }
     return false;

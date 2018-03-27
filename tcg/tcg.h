@@ -657,6 +657,8 @@ typedef struct TCGProfile {
     int64_t restore_count;
     int64_t restore_time;
     int64_t table_op_count[NB_OPS];
+    int64_t ld_count;
+    int64_t st_count;
 } TCGProfile;
 
 struct TCGContext {
@@ -736,6 +738,8 @@ struct TCGContext {
     TCGBasicBlock *cur_bb;
     int tb_with_several_bb;
     int bb_count;
+    int gen_lds;
+    int gen_sts;
 };
 
 extern TCGContext tcg_init_ctx;
