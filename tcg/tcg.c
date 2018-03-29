@@ -24,7 +24,7 @@
 
 /* define it to use liveness analysis (better code) */
 #define USE_TCG_OPTIMIZATIONS
-#define GLOBAL_REG_ALLOC
+//#define GLOBAL_REG_ALLOC
 
 #include "qemu/osdep.h"
 
@@ -2696,7 +2696,11 @@ static void liveness_pass_1(TCGContext *s, TranslationBlock *tb)
                         if (arg_ts->state & TS_MEM) {
                             arg_life |= SYNC_ARG << i;
                         }
-                        arg_ts->state = TS_DEAD;
+//                        int idx = temp_idx(arg_ts);
+//                        if (!bb || bb->prealloc_temps_before[idx] !=
+//                                bb->prealloc_temps_after[idx]) {
+                            arg_ts->state = TS_DEAD;
+//                        }
                 }
 
                 /* if end of basic block, update */
@@ -3537,13 +3541,6 @@ static void temp_free_or_dead(TCGContext *s, TCGTemp *ts, int free_or_dead)
 //                    ? TEMP_VAL_MEM : TEMP_VAL_DEAD);
 }
 
-/* Mark a temporary as dead.  */
-static inline void temp_dead(TCGContext *s, TCGTemp *ts)
-{
-//    fprintf(stderr, "Temp %lu dead\n", temp_idx(ts));
-    temp_free_or_dead(s, ts, 1);
-}
-
 /* Sync a temporary to memory. 'allocated_regs' is used in case a temporary
    registers needs to be allocated to store a constant.  If 'free_or_dead'
    is non-zero, subsequently release the temporary; if it is positive, the
@@ -3593,16 +3590,28 @@ static void temp_sync(TCGContext *s, TCGTemp *ts,
     }
 }
 
+/* Mark a temporary as dead.  */
+static inline void temp_dead(TCGContext *s, TCGTemp *ts)
+{
+    fprintf(stderr, "Temp %lu dead\n", temp_idx(ts));
+#ifdef GLOBAL_REG_ALLOC
+    if (ts->temp_global) {
+        temp_sync(s, ts, s->reserved_regs, 1);
+    } else
+#endif
+        temp_free_or_dead(s, ts, 1);
+}
+
 /* free register 'reg' by spilling the corresponding temporary if necessary */
 static void tcg_reg_free(TCGContext *s, TCGReg reg, TCGRegSet allocated_regs)
 {
     TCGTemp *ts = s->reg_to_temp[reg];
     if (ts != NULL) {
-//        fprintf(stderr, "Freeing reg %d (temp %lu)\n", reg, temp_idx(ts));
+        fprintf(stderr, "Freeing reg %d (temp %lu)\n", reg, temp_idx(ts));
         temp_sync(s, ts, allocated_regs, -1);
-    }/* else {
+    } else {
         fprintf(stderr, "Freeing reg %d (no temp)\n", reg);
-    }*/
+    }
 }
 
 /* Allocate a register belonging to reg1 & ~reg2 */
@@ -4698,7 +4707,8 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
             if (bb - s->basic_blocks < s->bb_count) {
 //                fprintf(stderr, "BB end: ind = %ld\n", bb - s->basic_blocks);
                 for (i = 0; i < s->nb_temps; i++) {
-                    if (bb->prealloc_temps_before[i] >= 0 && !s->temps[i].fixed_reg) {
+                    if (bb->prealloc_temps_before[i] >= 0 && !s->temps[i].fixed_reg &&
+                            s->temps[i].val_type != TEMP_VAL_DEAD) {
                         TCGTemp *ts = s->temps + i;
 //                        TCGTemp *ts1 = s->reg_to_temp[ts->reg];
 //                        fprintf(stderr, "BB end (GRA)[%d]: s->reg_to_temp[%d] = %ld\n",
@@ -4718,9 +4728,11 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
                         if (bb->prealloc_temps_before[i] != s->temps[i].reg) {
                             tcg_out_mov(s, ts->type, bb->prealloc_temps_before[i], s->temps[i].reg);
                             tcg_reg_free(s, s->temps[i].reg, s->reserved_regs);
+//                            temp_sync(s, ts, s->reserved_regs, -1);
                         }
-                        fprintf(stderr, "Next BB: temp[%d].prealloc reg = %d (temp_reg = %d)\n",
-                                i, bb->prealloc_temps_before[i], s->temps[i].reg);
+                        fprintf(stderr, "Next BB: temp[%d]{state = %d, mc = %d}.prealloc reg = %d (temp_reg = %d)\n",
+                                i, s->temps[i].val_type, ts->mem_coherent,
+                                bb->prealloc_temps_before[i], s->temps[i].reg);
                         s->temps[i].reg = bb->prealloc_temps_before[i];
                         s->temps[i].val_type = TEMP_VAL_REG;
 //                        s->temps[i].mem_coherent = 0;
