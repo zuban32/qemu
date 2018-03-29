@@ -628,6 +628,7 @@ static inline void tgen_arithr(TCGContext *s, int subop, int dest, int src)
 static inline void tcg_out_mov(TCGContext *s, TCGType type,
                                TCGReg ret, TCGReg arg)
 {
+    fprintf(stderr, "Mov %d <- %d\n", ret, arg);
     if (arg != ret) {
         int opc = OPC_MOVL_GvEv + (type == TCG_TYPE_I64 ? P_REXW : 0);
         tcg_out_modrm(s, opc, ret, arg);
