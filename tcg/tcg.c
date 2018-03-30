@@ -24,7 +24,7 @@
 
 /* define it to use liveness analysis (better code) */
 #define USE_TCG_OPTIMIZATIONS
-//#define GLOBAL_REG_ALLOC
+#define GLOBAL_REG_ALLOC
 
 #include "qemu/osdep.h"
 
@@ -4192,7 +4192,7 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op, TCGBasicBlock *cur_
         fprintf(stderr, "next_op = %d, opc = %d\n", noi, next_op->opc);
     }
 
-    if (def->flags & TCG_OPF_BB_END || next_op->bb != op->bb) {
+    if (def->flags & TCG_OPF_BB_END || (cur_bb && next_op->bb != op->bb)) {
 //        if (op->opc == INDEX_op_exit_tb) {
 //            sync_globals(s, i_allocated_regs);
 //        }
