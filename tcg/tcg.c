@@ -2969,7 +2969,21 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
         qemu_log("bb_count: %d\n", bb_count);
     }
 
-    if (!tb->need_cfg || check_addr(0x4000802cdc, tb) || check_addr(0x400080cc88, tb)) {
+    if (!tb->need_cfg || check_addr(0x4000802cdc, tb)
+            || check_addr(0x400080cc88, tb)
+            || check_addr(0x400081da30, tb)
+            || check_addr(0x400081c920, tb)
+            || check_addr(0x400081ddf0, tb)
+            || check_addr(0x400081df35, tb)
+            || check_addr(0x400081c978, tb)
+            || check_addr(0x400081d670, tb)
+            || check_addr(0x400081db70, tb)
+            || check_addr(0x4000804b4c, tb)
+            || check_addr(0x4000813110, tb)
+            || check_addr(0x400081318b, tb)
+            || check_addr(0x400081ae00, tb)
+            || check_addr(0x40008145ba, tb)
+            || check_addr(0x400081457a, tb)) {
         s->bb_count = 0;
         s->basic_blocks = NULL;
         return;
