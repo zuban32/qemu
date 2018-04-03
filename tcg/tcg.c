@@ -2969,41 +2969,43 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
         qemu_log("bb_count: %d\n", bb_count);
     }
 
-    if (!tb->need_cfg || check_addr(0x4000802cdc, tb)
-            || check_addr(0x400080cc88, tb)
-            || check_addr(0x400081da30, tb)
-            || check_addr(0x400081c920, tb)
-            || check_addr(0x400081ddf0, tb)
-            || check_addr(0x400081df35, tb)
-            || check_addr(0x400081c978, tb)
-            || check_addr(0x400081d670, tb)
-            || check_addr(0x400081db70, tb)
-            || check_addr(0x4000804b4c, tb)
-            || check_addr(0x4000813110, tb)
-            || check_addr(0x400081318b, tb)
-            || check_addr(0x400081ae00, tb)
-            || check_addr(0x40008145ba, tb)
-            || check_addr(0x400081457a, tb)
-            || check_addr(0x4000814398, tb)
-            || check_addr(0x400080d385, tb)
-            || check_addr(0x4000814398, tb)
-            || check_addr(0x4000b01380, tb)
-            || check_addr(0x4000b01460, tb)
-            || check_addr(0x4000a655d7, tb)
-            || check_addr(0x4000a65695, tb)
-            || check_addr(0x4000804c14, tb)
-            || check_addr(0x4000b07380, tb)
-            || check_addr(0x4000b07460, tb)
-            || check_addr(0x4000a6b5d7, tb)
-            || check_addr(0x4000af5b80, tb)
-            || check_addr(0x4000a6b379, tb)
-            || check_addr(0x4000ac9a8b, tb)
-            || check_addr(0x4000ad08df, tb)
+    if (!tb->need_cfg
+            || check_addr(0x4000802cdc, tb) // segfault
+            || check_addr(0x400080cc88, tb) // inf loop
+//            || check_addr(0x400081da30, tb) // ok
+//            || check_addr(0x400081c920, tb) // ok
+//            || check_addr(0x400081ddf0, tb) // ok
+            || check_addr(0x400081df35, tb) // ld error
+//            || check_addr(0x400081c978, tb) // ok
+//            || check_addr(0x400081d670, tb) // ok
+//            || check_addr(0x400081db70, tb) // ok
+            || check_addr(0x4000804b4c, tb) // segfault
+            || check_addr(0x4000813110, tb) // segfault
+            || check_addr(0x400081318b, tb) // segfault
+//            || check_addr(0x400081ae00, tb) // ok
+//            || check_addr(0x40008145ba, tb) // ok
+//            || check_addr(0x400081457a, tb) // ok
+//            || check_addr(0x4000814398, tb) // ok
+            || check_addr(0x400080d385, tb) // segfault
+//            || check_addr(0x4000814398, tb) // ok
+            || check_addr(0x4000b01380, tb) // segfault
+            || check_addr(0x4000b01460, tb) // segfault
+            || check_addr(0x4000a655d7, tb) // check_reg inconsistency
+//            || check_addr(0x4000a65695, tb) // ok
+//            || check_addr(0x4000804c14, tb) // ok
+//            || check_addr(0x4000b07380, tb) // ok
+//            || check_addr(0x4000b07460, tb) // ok
+//            || check_addr(0x4000a6b5d7, tb) // ok
+//            || check_addr(0x4000af5b80, tb) // ok
+//            || check_addr(0x4000a6b379, tb) // ok
+//            || check_addr(0x4000ac9a8b, tb) // ok
+//            || check_addr(0x4000ad08df, tb) // ok
             // for isp machine
-            || check_addr(0x4000aefb80, tb)
-            || check_addr(0x4000a65379, tb)
-            || check_addr(0x4000ac3a8b, tb)
-            || check_addr(0x4000aca8df, tb)) {
+//            || check_addr(0x4000aefb80, tb) // ok
+            || check_addr(0x4000a65379, tb) // sync globals error
+            || check_addr(0x4000ac3a8b, tb) // segfault
+            || check_addr(0x4000aca8df, tb) // aborted
+            ) {
         s->bb_count = 0;
         s->basic_blocks = NULL;
         return;
