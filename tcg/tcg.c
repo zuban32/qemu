@@ -2991,7 +2991,14 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
             || check_addr(0x4000b01460, tb)
             || check_addr(0x4000a655d7, tb)
             || check_addr(0x4000a65695, tb)
-            || check_addr(0x4000804c14, tb)) {
+            || check_addr(0x4000804c14, tb)
+            || check_addr(0x4000b07380, tb)
+            || check_addr(0x4000b07460, tb)
+            || check_addr(0x4000a6b5d7, tb)
+            || check_addr(0x4000af5b80, tb)
+            || check_addr(0x4000a6b379, tb)
+            || check_addr(0x4000ac9a8b, tb)
+            || check_addr(0x4000ad08df, tb)) {
         s->bb_count = 0;
         s->basic_blocks = NULL;
         return;
