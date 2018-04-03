@@ -2993,13 +2993,13 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
             || check_addr(0x4000a655d7, tb) // check_reg inconsistency
 //            || check_addr(0x4000a65695, tb) // ok
 //            || check_addr(0x4000804c14, tb) // ok
-//            || check_addr(0x4000b07380, tb) // ok
-//            || check_addr(0x4000b07460, tb) // ok
-//            || check_addr(0x4000a6b5d7, tb) // ok
+            || check_addr(0x4000b07380, tb) // ok (carbon crucial - segfault)
+            || check_addr(0x4000b07460, tb) // ok (carbon crucial - segfault)
+            || check_addr(0x4000a6b5d7, tb) // ok (carbon crucial - check_reg inconsistency)
 //            || check_addr(0x4000af5b80, tb) // ok
-//            || check_addr(0x4000a6b379, tb) // ok
-//            || check_addr(0x4000ac9a8b, tb) // ok
-//            || check_addr(0x4000ad08df, tb) // ok
+            || check_addr(0x4000a6b379, tb) // ok (carbon crucial - sync globals error)
+            || check_addr(0x4000ac9a8b, tb) // ok (carbon crucial)
+            || check_addr(0x4000ad08df, tb) // ok (carbon crucial - aborted)
             // for isp machine
 //            || check_addr(0x4000aefb80, tb) // ok
             || check_addr(0x4000a65379, tb) // sync globals error
