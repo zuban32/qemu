@@ -2998,7 +2998,12 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
             || check_addr(0x4000af5b80, tb)
             || check_addr(0x4000a6b379, tb)
             || check_addr(0x4000ac9a8b, tb)
-            || check_addr(0x4000ad08df, tb)) {
+            || check_addr(0x4000ad08df, tb)
+            // for isp machine
+            || check_addr(0x4000aefb80, tb)
+            || check_addr(0x4000a65379, tb)
+            || check_addr(0x4000ac3a8b, tb)
+            || check_addr(0x4000aca8df, tb)) {
         s->bb_count = 0;
         s->basic_blocks = NULL;
         return;
