@@ -2898,7 +2898,7 @@ static bool __attribute__((unused)) liveness_pass_2(TCGContext *s)
     return changes;
 }
 
-#ifdef GLOBAL_REG_ALLOC
+//#ifdef GLOBAL_REG_ALLOC
 static inline bool check_addr(target_ulong addr, TranslationBlock *tb)
 {
     if (tb->min_pc <= addr && addr < tb->max_pc) {
@@ -2906,7 +2906,7 @@ static inline bool check_addr(target_ulong addr, TranslationBlock *tb)
     }
     return false;
 }
-#endif
+//#endif
 
 static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
 {
@@ -2983,7 +2983,15 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
             || check_addr(0x400081318b, tb)
             || check_addr(0x400081ae00, tb)
             || check_addr(0x40008145ba, tb)
-            || check_addr(0x400081457a, tb)) {
+            || check_addr(0x400081457a, tb)
+            || check_addr(0x4000814398, tb)
+            || check_addr(0x400080d385, tb)
+            || check_addr(0x4000814398, tb)
+            || check_addr(0x4000b01380, tb)
+            || check_addr(0x4000b01460, tb)
+            || check_addr(0x4000a655d7, tb)
+            || check_addr(0x4000a65695, tb)
+            || check_addr(0x4000804c14, tb)) {
         s->bb_count = 0;
         s->basic_blocks = NULL;
         return;
@@ -4527,6 +4535,9 @@ static void tcg_reg_alloc_call(TCGContext *s, TCGOp *op)
     } else if (flags & TCG_CALL_NO_WRITE_GLOBALS) {
         sync_globals(s, allocated_regs, s->cur_bb, true);
     } else {
+        for(int i = 0; i < s->nb_globals; i++) {
+            temp_sync(s, s->temps + i, allocated_regs, 1);
+        }
         save_globals(s, allocated_regs, s->cur_bb);
     }
 
