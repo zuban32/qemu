@@ -106,6 +106,8 @@ typedef struct jump_to_resolve {
     bool cc_op_dirty;
     int place;
     int exit;
+    int rstart;
+    int rend;
 } jump_to_resolve;
 #endif
 
@@ -2256,9 +2258,10 @@ static inline void gen_jcc(DisasContext *s, int b,
     if (s->jmp_opt) {
         l1 = gen_new_label();
         s->cur_jumps--;
+        gen_jcc1(s, b, l1);
 //        fprintf(stderr, "cur_jumps = %d\n", s->cur_jumps);
         if (s->cur_jumps < 0 || crosses_page(s, val)) {
-            gen_jcc1(s, b, l1);
+//            gen_jcc1(s, b, l1);
 
             gen_goto_tb(s, s->cur_exit++, next_eip);
 
@@ -2271,11 +2274,12 @@ static inline void gen_jcc(DisasContext *s, int b,
             s->base.tb->need_cfg = 1;
             s->jumps_to_resolve[s->cur_jump_to_resolve].pc = val;
 //            s->jumps_to_resolve[s->cur_jump_to_resolve].tb = s->cur_exit++;
-            gen_jcc1(s, b^1, l1);
+//            gen_jcc1(s, b^1, l1);
             s->jumps_to_resolve[s->cur_jump_to_resolve].exit = s->cur_exit++;
-            s->jumps_to_resolve[s->cur_jump_to_resolve++].place = tcg_ctx->gen_next_op_idx-1;
+            s->jumps_to_resolve[s->cur_jump_to_resolve].place = tcg_ctx->gen_next_op_idx-1;
+            s->jumps_to_resolve[s->cur_jump_to_resolve++].l = l1;
 //            gen_goto_tb(s, s->cur_exit++, val);
-            gen_set_label(l1);
+//            gen_set_label(l1);
         }
 //        s->cur_exit += 2;
 #ifdef ENABLE_BIG_TB
@@ -2692,35 +2696,40 @@ static void do_resolve_jumps(DisasContext *s)
 #ifdef DEBUG_BIG_TB
             fprintf(stderr, "Resolving jump to %lx...\n", s->jumps_to_resolve[i].pc);
 #endif
-            s->base.tb->patch_end = true;
             bool found = false;
             for(int j = 0; j < s->cur_instr_code; j++) {
                 if (s->instr_gen_code[j].pc == s->jumps_to_resolve[i].pc) {
                     int label_start_idx = tcg_ctx->gen_next_op_idx;
                     TCGLabel *l;
-                    if (!s->jmp_opt) {
-                        l = s->jumps_to_resolve[i].l;
-                    } else {
-                        l = gen_new_label();
-                    }
+//                    if (!s->jmp_opt) {
+                    l = s->jumps_to_resolve[i].l;
+//                    } else {
+//                        l = gen_new_label();
+//                    }
+                    s->base.tb->patch_end = true;
                     gen_set_label(l);
+                    TCGOp *cur_op = &tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx-1];
+                    tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx].prev = cur_op->prev;
+
 //                    gen_tb_start(s->base.tb);
                     int label_idx = tcg_ctx->gen_next_op_idx - 1;
                     int target_idx = s->instr_gen_code[j].op_idx;
-                    if (!s->jmp_opt) {
-                        tcg_gen_br(exit_l);
-                    } else {
-                        tcg_gen_br(l);
-                    }
+//                    if (!s->jmp_opt) {
+//                        tcg_gen_br(exit_l);
+//                    } else {
+////                        gen_jcc1(s, s->jumps_to_resolve[i].b, s->jumps_to_resolve[i].l);
+////                        tcg_gen_br(l);
+//                    }
 
+                    fprintf(stderr, "Inserting op %d between %d and %d\n", label_idx, target_idx, target_idx);
                     patch_prev = op_insert_after(target_idx, label_idx, label_idx, patch_prev);
 
-                    if (s->jmp_opt) {
-                        int cur_idx = tcg_ctx->gen_next_op_idx-1;
-                        patch_prev = op_insert_after(s->jumps_to_resolve[i].place, cur_idx, cur_idx, -1);
-                    } else {
-                        tcg_ctx->gen_next_op_idx--;
-                    }
+//                    if (s->jmp_opt) {
+//                        int cur_idx = tcg_ctx->gen_next_op_idx-1;
+//                        patch_prev = op_insert_after(s->jumps_to_resolve[i].place, cur_idx, cur_idx, -1);
+//                    } else {
+//                        tcg_ctx->gen_next_op_idx--;
+//                    }
 
 #ifdef DEBUG_BIG_TB
                     fprintf(stderr, "Resolved jump to %lx\n", s->jumps_to_resolve[i].pc);
@@ -2742,9 +2751,17 @@ static void do_resolve_jumps(DisasContext *s)
                     s->cc_op = s->jumps_to_resolve[i].cc_op;
                     tcg_gen_br(exit_l);
                 } else {
-                    int cur_idx = tcg_ctx->gen_next_op_idx;
+//                    int cur_idx = tcg_ctx->gen_next_op_idx;
+//                    gen_jcc1(s, s->jumps_to_resolve[i].b, s->jumps_to_resolve[i].l);
+                    int prev_idx = tcg_ctx->gen_op_buf[0].prev;
+//                    TCGOp *prev_op = &tcg_ctx->gen_op_buf[prev_idx];
+//                    prev_op->next = tcg_ctx->gen_next_op_idx;
+                    gen_set_label(s->jumps_to_resolve[i].l);
+                    fprintf(stderr, "Setting op %d prev to %d\n", tcg_ctx->gen_next_op_idx-1, prev_idx);
+                    tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx-1].prev = prev_idx;
                     gen_goto_tb(s, s->jumps_to_resolve[i].exit, s->jumps_to_resolve[i].pc);
-                    patch_prev = op_insert_after(s->jumps_to_resolve[i].place, cur_idx, tcg_ctx->gen_next_op_idx-1, patch_prev);
+//                    tcg_ctx->gen_op_buf[tcg_ctx->gen_op_buf[0].prev].next = 0;
+//                    patch_prev = op_insert_after(s->jumps_to_resolve[i].place, cur_idx, tcg_ctx->gen_next_op_idx-1, patch_prev);
                 }
             }
         }
@@ -2863,10 +2880,13 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
                 s->base.tb->min_pc = s->pc;
             }
         } else {
+            TCGLabel *l = gen_new_label();
+            tcg_gen_br(l);
             s->base.tb->need_cfg = 1;
             // case of "repz <op>" instruction needs jumps resolution instead
             s->jumps_to_resolve[s->cur_jump_to_resolve].place = tcg_ctx->gen_next_op_idx-1;
             s->jumps_to_resolve[s->cur_jump_to_resolve].pc = eip;
+            s->jumps_to_resolve[s->cur_jump_to_resolve].l = l;
             s->jumps_to_resolve[s->cur_jump_to_resolve++].exit = s->cur_exit++;
         }
     } else {
