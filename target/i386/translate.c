@@ -2721,7 +2721,6 @@ static void do_resolve_jumps(DisasContext *s)
 ////                        tcg_gen_br(l);
 //                    }
 
-                    fprintf(stderr, "Inserting op %d between %d and %d\n", label_idx, target_idx, target_idx);
                     patch_prev = op_insert_after(target_idx, label_idx, label_idx, patch_prev);
 
 //                    if (s->jmp_opt) {
@@ -2757,7 +2756,7 @@ static void do_resolve_jumps(DisasContext *s)
 //                    TCGOp *prev_op = &tcg_ctx->gen_op_buf[prev_idx];
 //                    prev_op->next = tcg_ctx->gen_next_op_idx;
                     gen_set_label(s->jumps_to_resolve[i].l);
-                    fprintf(stderr, "Setting op %d prev to %d\n", tcg_ctx->gen_next_op_idx-1, prev_idx);
+//                    fprintf(stderr, "Setting op %d prev to %d\n", tcg_ctx->gen_next_op_idx-1, prev_idx);
                     tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx-1].prev = prev_idx;
                     gen_goto_tb(s, s->jumps_to_resolve[i].exit, s->jumps_to_resolve[i].pc);
                     patch_prev = tcg_ctx->gen_next_op_idx-1;
