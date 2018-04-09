@@ -2060,14 +2060,18 @@ static void tcg_la_bb_end(TCGContext *s, TCGOpcode opc, TCGBasicBlock *bb)
                                  : TS_DEAD);
         }
     } else {
+        TCGBasicBlock *tbb = bb;
+        if (opc == INDEX_op_set_label) {
+            tbb--;
+        }
         for (i = 0; i < ng; ++i) {
-            if (bb->prealloc_temps_after[i] < 0) {
-//                fprintf(stderr, "Global %d dead\n", i);
+            if (tbb->prealloc_temps_after[i] < 0) {
+                fprintf(stderr, "Global %d dead\n", i);
                 s->temps[i].state = TS_DEAD | TS_MEM;
             }
         }
         for (i = ng; i < nt; ++i) {
-            if (bb->prealloc_temps_after[i] < 0)
+            if (tbb->prealloc_temps_after[i] < 0)
                 s->temps[i].state = (s->temps[i].temp_local
                                  ? TS_DEAD | TS_MEM
                                  : TS_DEAD);
@@ -2983,8 +2987,8 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
     }
 
     if (!tb->need_cfg
-            || check_addr(0x4000810955, tb) // for MAX_INNER_JUMPS=2
-            || check_addr(0x400081cb88, tb) // for MAX_INNER_JUMPS=2
+//            || check_addr(0x4000810955, tb) // for MAX_INNER_JUMPS=2 - fixed
+//            || check_addr(0x400081cb88, tb) // for MAX_INNER_JUMPS=2
 
             // for isp machine
 //            || check_addr(0x4000aefb80, tb) // ok
@@ -3981,6 +3985,8 @@ static void tcg_reg_alloc_do_movi(TCGContext *s, TCGTemp *ots,
         tcg_out_movi(s, ots->type, ots->reg, val);
         return;
     }
+    fprintf(stderr, "movi: t%lu(r%d, s=%d) <- %lx\n", temp_idx(ots),
+            ots->reg, ots->val_type, val);
 
     /* The movi is not explicitly generated here.  */
     if (ots->val_type == TEMP_VAL_REG) {
@@ -4035,8 +4041,9 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOp *op)
         return;
     }
 
-    fprintf(stderr, "MOV: t%lu(r%d)->t%lu(r%d)\n",
-            temp_idx(ts), ts->reg, temp_idx(ots), ots->reg);
+    fprintf(stderr, "MOV: t%lu(r%d,s=%d)->t%lu(r%d, s=%d)\n",
+            temp_idx(ts), ts->reg, ts->val_type,
+            temp_idx(ots), ots->reg, ots->val_type);
 
     /* If the source value is in memory we're going to be forced
        to have it in a register in order to perform the copy.  Copy
@@ -4063,6 +4070,7 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOp *op)
     } else {
         if (IS_DEAD_ARG(1) && !ts->fixed_reg && !ots->fixed_reg &&
                 (!s->cur_bb || s->cur_bb->prealloc_temps_after[temp_idx(ots)] < 0)) {
+            fprintf(stderr, "Suppress mov\n");
             /* the mov can be suppressed */
             if (ots->val_type == TEMP_VAL_REG) {
                 s->reg_to_temp[ots->reg] = NULL;
@@ -4081,6 +4089,15 @@ static void tcg_reg_alloc_mov(TCGContext *s, const TCGOp *op)
             tcg_out_mov(s, otype, ots->reg, ts->reg);
             fprintf(stderr, "Mov: t%lu(r%d) <- t%lu(r%d)\n",
                     temp_idx(ots), ots->reg, temp_idx(ts), ts->reg);
+            const TCGOp *next_op = op;
+            do {
+                next_op = &s->gen_op_buf[next_op->next];
+            }
+            while(next_op->opc == INDEX_op_discard || next_op->opc == INDEX_op_insn_start
+                    || next_op->opc == INDEX_op_mov_i64);
+            if (next_op->opc == INDEX_op_set_label && IS_DEAD_ARG(1)) {
+                temp_dead(s, ts);
+            }
         }
         ots->val_type = TEMP_VAL_REG;
         fprintf(stderr, "mov: Loading temp %lu onto reg %d\n",
@@ -4099,7 +4116,7 @@ static void chain_unwind(TCGContext *s, TCGTemp *ts, int reg, TCGBasicBlock *bb,
 {
     fprintf(stderr, "-- ch_unwind step: ts=%p(%d){s=%d},reg=%d\n",
             ts, ts?(int)temp_idx(ts):-1, ts?ts->val_type:-1, reg);
-    if (!ts || ts->reg == reg || ts->val_type == TEMP_VAL_MEM) {
+    if (!ts || ts->reg == reg || ts->val_type != TEMP_VAL_REG) {
         fprintf(stderr, "-- ch_unwind step end: ts=%p(%d),reg=%d\n", ts, ts?(int)temp_idx(ts):-1, reg);
         return;
     }
@@ -4905,10 +4922,10 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
         oi_next = op->next;
         fprintf(stderr, "####\tOp = %d, next = %d\n", oi, oi_next);
 
-        TCGOp *prev_op = NULL;
-        if (op->prev > 0) {
-            prev_op = &s->gen_op_buf[op->prev];
-        }
+        TCGOp *prev_op = op;
+        do {
+            prev_op = &s->gen_op_buf[prev_op->prev];
+        } while(prev_op->prev > 0 && prev_op->opc == INDEX_op_insn_start);
 
         if (cur_bb && cur_bb != &s->basic_blocks[op->bb]) {
             cur_bb++;
@@ -4993,8 +5010,12 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
             return -1;
         }
 
-        TCGOp *next_op = &s->gen_op_buf[op->next];
+        TCGOp *next_op = op;
+        do {
+            next_op = &s->gen_op_buf[next_op->next];
+        } while(next_op->opc == INDEX_op_insn_start || next_op->opc == INDEX_op_discard);
         if(next_op->bb != -1 && op->bb != next_op->bb) {
+            fprintf(stderr, "Loading consts on preallocs\n");
             bb = s->basic_blocks + next_op->bb;
             if (bb - s->basic_blocks < s->bb_count) {
                 for(i = 0; i < s->nb_temps; i++) {
@@ -5050,6 +5071,9 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
             } else {
                 bb = NULL;
             }
+        } else {
+            fprintf(stderr, "Do not load consts on preallocs: cur_bb = %d, next_bb = %d\n",
+                    op->bb, next_op->bb);
         }
         s->cur_bb = bb;
 
