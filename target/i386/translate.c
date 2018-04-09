@@ -109,6 +109,11 @@ typedef struct jump_to_resolve {
     int rstart;
     int rend;
 } jump_to_resolve;
+
+typedef struct tb_region {
+    target_ulong start;
+    target_ulong end;
+} tb_region;
 #endif
 
 typedef struct DisasContext {
@@ -165,6 +170,8 @@ typedef struct DisasContext {
     bool jumps_resolved;
     bool met_exc;
     bool met_br;
+    tb_region regions[MAX_INNER_JUMPS+1];
+    int cur_region;
 #endif
 } DisasContext;
 
@@ -2257,6 +2264,8 @@ static inline void gen_jcc(DisasContext *s, int b,
 
     if (s->jmp_opt) {
         l1 = gen_new_label();
+        fprintf(stderr, "Jcc to %lx; cur_jumps %d -> %d\n", val, s->cur_jumps,
+                s->cur_jumps-1);
         s->cur_jumps--;
         gen_jcc1(s, b, l1);
 //        fprintf(stderr, "cur_jumps = %d\n", s->cur_jumps);
@@ -2850,6 +2859,16 @@ static void gen_jr(DisasContext *s, TCGv dest)
     do_gen_eob_worker(s, false, false, true);
 }
 
+static int check_jmp_target(DisasContext *s, target_ulong pc)
+{
+    for(int i = 0; i < s->cur_region; i++) {
+        if (s->regions[i].start <= pc && s->regions[i].end >= pc) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* generate a jump to eip. No segment change must happen before as a
    direct call to the next block may occur */
 static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
@@ -2866,14 +2885,24 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
         if (s->pc < s->base.tb->min_pc) {
             s->base.tb->min_pc = s->pc;
         }
+        fprintf(stderr, "Jmp to %lx; cur_jumps %d -> %d\n", s->cs_base+eip, s->cur_jumps,
+                s->cur_jumps-1);
         s->cur_jumps--;
         if (s->cur_jumps < 0 || crosses_page(s, s->cs_base+eip)) {
+            fprintf(stderr, "Finishing TB: cj = %d, cp = %d\n", s->cur_jumps,
+                    crosses_page(s, s->cs_base+eip));
             gen_goto_tb(s, s->cur_exit++, eip);
             gen_eob(s);
         } else if (eip != s->base.pc_next - s->cs_base && !tb_num) {
             s->base.tb->need_cfg = 1;
             s->base.pc_next = eip + s->cs_base;
+            s->regions[s->cur_region++].end = s->pc;
+            if (check_jmp_target(s, eip+s->cs_base)) {
+//                s->base.is_jmp = DISAS_NORETURN;
+                goto do_resolve;
+            }
             s->pc = eip + s->cs_base;
+            s->regions[s->cur_region].start = s->pc;
 
             if (s->pc > s->base.tb->max_pc) {
                 s->base.tb->max_pc = s->pc;
@@ -2882,9 +2911,10 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
                 s->base.tb->min_pc = s->pc;
             }
         } else {
+            do_resolve:
+            s->base.tb->need_cfg = 1;
             TCGLabel *l = gen_new_label();
             tcg_gen_br(l);
-            s->base.tb->need_cfg = 1;
             // case of "repz <op>" instruction needs jumps resolution instead
             s->jumps_to_resolve[s->cur_jump_to_resolve].place = tcg_ctx->gen_next_op_idx-1;
             s->jumps_to_resolve[s->cur_jump_to_resolve].pc = eip;
@@ -8777,6 +8807,7 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
 #ifdef ENABLE_BIG_TB
     dc->cur_jumps = MAX_INNER_JUMPS;
     dc->cur_instr_code = 0;
+    dc->cur_region = 0;
     dc->cur_jump_to_resolve = 0;
     dc->jumps_resolved = false;
     dc->met_exc = false;
@@ -8788,6 +8819,8 @@ static int i386_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cpu,
 
 static void i386_tr_tb_start(DisasContextBase *db, CPUState *cpu)
 {
+    DisasContext *dc = container_of(db, DisasContext, base);
+    dc->regions[0].start = db->tb->pc;
 }
 
 static void i386_tr_insn_start(DisasContextBase *dcbase, CPUState *cpu)
@@ -8877,6 +8910,7 @@ static void i386_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
 //        dc->met_exc = true;
         gen_eob(dc);
     }
+    dc->regions[dc->cur_region++].end = dc->pc;
     do_resolve_jumps(dc);
     if (dc->pc > dcbase->tb->max_pc) {
         dcbase->tb->max_pc = dc->pc;

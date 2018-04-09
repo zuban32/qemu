@@ -1605,7 +1605,7 @@ void tcg_dump_ops(TCGContext *s)
         if (s->basic_blocks && cur_bb < s->bb_count
                 && s->basic_blocks[cur_bb].first_insn == oi) {
             qemu_log(" --- BB %d begin --- \n", cur_bb);
-//#ifdef DEBUG_JIT
+#ifdef CONFIG_DEBUG_TCG
             qemu_log("prealloc before: ");
             for(i = 0; i < s->nb_globals; i++) {
                 if (bb->prealloc_temps_before[i] >= 0) {
@@ -1616,7 +1616,7 @@ void tcg_dump_ops(TCGContext *s)
                 }
             }
             qemu_log("\n");
-//#endif
+#endif
         }
 
         op = &s->gen_op_buf[oi];
@@ -1768,7 +1768,7 @@ void tcg_dump_ops(TCGContext *s)
         if(s->basic_blocks && cur_bb < s->bb_count
                 && s->basic_blocks[cur_bb].last_insn == oi) {
             qemu_log(" --- BB %d end --- \n", cur_bb);
-//#ifdef DEBUG_JIT
+#ifdef CONFIG_DEBUG_TCG
             qemu_log("prealloc after: ");
             for(i = 0; i < s->nb_globals; i++) {
                 if (bb->prealloc_temps_after[i] >= 0) {
@@ -1778,7 +1778,7 @@ void tcg_dump_ops(TCGContext *s)
                 }
             }
             qemu_log("\n");
-//#endif
+#endif
             cur_bb++;
         }
     }
