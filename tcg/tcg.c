@@ -2370,7 +2370,7 @@ static void liveness_pass_0(TCGContext *s, TranslationBlock *tb)
 
                 /* if end of basic block, update */
                 if (def->flags & TCG_OPF_BB_END) {
-                    fprintf(stderr, "Liveness [%d]: bb_end\n", oi);
+//                    fprintf(stderr, "Liveness [%d]: bb_end\n", oi);
                     tcg_la_bb_end(s, opc, bb);
                 } else if (def->flags & TCG_OPF_SIDE_EFFECTS) {
                     /* globals should be synced to memory */
@@ -2448,7 +2448,8 @@ static void liveness_pass_1(TCGContext *s, TranslationBlock *tb)
             }
         }
 
-//        fprintf(stderr, "Op = %d, bb_index = %d\n", oi, bb_index);
+        fprintf(stderr, "Op = %d, prev = %d, bb_index = %d\n",
+                oi, op->prev, bb_index);
 
         switch (opc) {
         case INDEX_op_call:
@@ -2648,7 +2649,18 @@ static void liveness_pass_1(TCGContext *s, TranslationBlock *tb)
                     }
                 }
             do_remove:
+//                if(s->gen_op_buf[op->prev].opc == INDEX_op_insn_start
+//                        && s->gen_op_buf[op->next].opc == INDEX_op_insn_start) {
+//                    TCGOp *prev = &s->gen_op_buf[op->prev];
+//                    oi_prev = prev->prev;
+//                    fprintf(stderr, "Liveness: remove insn start %d (betw %d and %d)\n",
+//                            oi, prev->prev, prev->next);
+//                    tcg_op_remove(s, prev);
+//                }
+//                fprintf(stderr, "Liveness: remove op %d (betw %d and %d)\n",
+//                        oi, op->prev, op->next);
                 tcg_op_remove(s, op);
+
             } else {
             do_not_remove:
                 /* compute register pressure in this instruction */
@@ -2956,8 +2968,12 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
         default:
             break;
         }
+        fprintf(stderr, "Op %d - opc = %d; ", oi, opc);
         if (cur_insn_is_bb_start) {
             bb_count++;
+            fprintf(stderr, "BB %d start\n", bb_count);
+        } else {
+            fprintf(stderr, "\n");
         }
         cur_insn_is_bb_start = next_insn_is_bb_start;
     }
@@ -2967,37 +2983,8 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
     }
 
     if (!tb->need_cfg
-//            || check_addr(0x4000802cdc, tb) // segfault - fixed
-//            || check_addr(0x400080cc88, tb) // inf loop
-//            || check_addr(0x400081da30, tb) // ok
-//            || check_addr(0x400081c920, tb) // ok
-//            || check_addr(0x400081ddf0, tb) // ok
-//            || check_addr(0x400081df35, tb) // ld error - fixed
-//            || check_addr(0x400081c978, tb) // ok
-//            || check_addr(0x400081d670, tb) // ok
-//            || check_addr(0x400081db70, tb) // ok
-//            || check_addr(0x4000804b4c, tb) // segfault -> ld error - fixed
-//            || check_addr(0x4000813110, tb) // segfault - fixed
-//            || check_addr(0x400081318b, tb) // segfault - fixed
-//            || check_addr(0x400081ae00, tb) // ok
-//            || check_addr(0x40008145ba, tb) // ok
-//            || check_addr(0x400081457a, tb) // ok
-//            || check_addr(0x4000814398, tb) // ok
-//            || check_addr(0x400080d385, tb) // segfault - fixed
-//            || check_addr(0x4000814398, tb) // ok
-//            || check_addr(0x4000b01380, tb) // segfault - fixed
-//            || check_addr(0x4000b01460, tb) // segfault - fixed
-//            || check_addr(0x4000a655d7, tb) // check_reg inconsistency - fixed
-//            || check_addr(0x4000a65695, tb) // ok
-//            || check_addr(0x4000804c14, tb) // ok
-//            || check_addr(0x4000b07380, tb) // ok (carbon crucial - segfault)
-//            || check_addr(0x4000b07460, tb) // ok (carbon crucial - segfault)
-//            || check_addr(0x4000a6b5d7, tb) // ok (carbon crucial - segfault -> aborted)
-//            || check_addr(0x4000af5b80, tb) // ok
-//            || check_addr(0x4000a6b379, tb) // ok (carbon crucial - sync globals error) - fixed
-//            || check_addr(0x4000ac9a8b, tb) // ok (carbon crucial - segfault) - fixed
-//            || check_addr(0x4000ad08df, tb) // ok (carbon crucial - aborted) - fixed
-//            || check_addr(0x4000a6b5d7, tb)
+            || check_addr(0x4000810955, tb) // for MAX_INNER_JUMPS=2
+            || check_addr(0x400081cb88, tb) // for MAX_INNER_JUMPS=2
 
             // for isp machine
 //            || check_addr(0x4000aefb80, tb) // ok
@@ -3011,6 +2998,7 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
     }
 
     s->bb_count = bb_count;
+//    fprintf(stderr, "BB count = %d\n", s->bb_count);
 
     s->basic_blocks = tcg_malloc(bb_count * sizeof(TCGBasicBlock));
     memset(s->basic_blocks, 0, bb_count * sizeof(TCGBasicBlock));
@@ -3022,38 +3010,46 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
         TCGOp * const op = &s->gen_op_buf[oi];
         TCGOpcode opc = op->opc;
         const TCGOpDef *def = &tcg_op_defs[opc];
-
+//        fprintf(stderr, "Op %d - opc = %d; ", oi, opc);
+//        bool has_nl = false;
         oi_next = op->next;
         next_insn_is_bb_start = 0;
         if (cur_insn_is_bb_start) {
+//            fprintf(stderr, "BB start\n");
+//            has_nl = true;
             if (bb_index > 0) {
                 s->basic_blocks[bb_index - 1].last_insn = op->prev;
             }
             s->basic_blocks[bb_index].first_insn = oi;
             succ_count = 0;
             bb_index++;
+        } else {
+//            fprintf(stderr, "\n");
         }
         op->bb = bb_index-1;
         switch (opc) {
         case INDEX_op_call:
             break;
         case INDEX_op_insn_start:
-            if (s->gen_op_buf[oi_next].opc == INDEX_op_set_label) {
+            if (s->gen_op_buf[oi_next].opc == INDEX_op_set_label /*&&
+                s->gen_op_buf[op->prev].opc != INDEX_op_insn_start*/) {
 //        case INDEX_op_set_label:
-            if (!cur_insn_is_bb_start) {
-                s->basic_blocks[bb_index].first_insn = oi;
-                if (bb_index > 0) {
-                    s->basic_blocks[bb_index - 1].last_insn = op->prev;
-                    if (   s->gen_op_buf[op->prev].opc != INDEX_op_br
-                        && s->gen_op_buf[op->prev].opc != INDEX_op_exit_tb
-                        && s->gen_op_buf[op->prev].opc != INDEX_op_goto_ptr) {
-                        s->basic_blocks[bb_index - 1].succ[succ_count++].dest =
-                            &s->basic_blocks[bb_index];
+                if (!cur_insn_is_bb_start) {
+//                    fprintf(stderr, "BB start\n");
+//                    has_nl = true;
+                    s->basic_blocks[bb_index].first_insn = oi;
+                    if (bb_index > 0) {
+                        s->basic_blocks[bb_index - 1].last_insn = op->prev;
+                        if (   s->gen_op_buf[op->prev].opc != INDEX_op_br
+                            && s->gen_op_buf[op->prev].opc != INDEX_op_exit_tb
+                            && s->gen_op_buf[op->prev].opc != INDEX_op_goto_ptr) {
+                            s->basic_blocks[bb_index - 1].succ[succ_count++].dest =
+                                &s->basic_blocks[bb_index];
+                        }
                     }
+                    succ_count = 0;
+                    bb_index++;
                 }
-                succ_count = 0;
-                bb_index++;
-            }
             }
             break;
         case INDEX_op_brcond_i32:
@@ -3082,6 +3078,9 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
         default:
             break;
         }
+//        if (!has_nl) {
+//            fprintf(stderr, "\n");
+//        }
         cur_insn_is_bb_start = next_insn_is_bb_start;
     }
     assert (bb_index == bb_count);
@@ -4111,7 +4110,7 @@ static void chain_unwind(TCGContext *s, TCGTemp *ts, int reg, TCGBasicBlock *bb,
         return;
     }
     int idx = temp_idx(ts);
-    fprintf(stderr, "* ts->reg = %d, prealloc = %d\n", ts->reg, bb->prealloc_temps_before[idx]);
+    fprintf(stderr, "* ts->reg = %d, prealloc = %d\n", ts->reg, bb->prealloc_temps_after[idx]);
     bool do_mov = false;
     int r1, r2;
     int treg = -1;
@@ -4126,7 +4125,7 @@ static void chain_unwind(TCGContext *s, TCGTemp *ts, int reg, TCGBasicBlock *bb,
     fprintf(stderr, "reg_to_temp[%d] = %p(%d)\n", reg, next_ts, next_ts?(int)temp_idx(next_ts):-1);
     if (next_ts) {
         idx = temp_idx(next_ts);
-        treg = bb->prealloc_temps_before[idx];
+        treg = bb->prealloc_temps_after[idx];
         fprintf(stderr, "next: reg = %d, idx = %d\n", treg, idx);
     }
     int temp_reg = -1;
@@ -4338,27 +4337,28 @@ static void tcg_reg_alloc_op(TCGContext *s, const TCGOp *op, TCGBasicBlock *cur_
 //        if (op->opc == INDEX_op_exit_tb) {
 //            sync_globals(s, i_allocated_regs);
 //        }
-        fprintf(stderr, "ra op: BB end\n");
+        fprintf(stderr, "ra op: BB %ld end, next = %d\n",
+                s->cur_bb - s->basic_blocks, next_op->bb);
         tcg_reg_alloc_bb_end(s, i_allocated_regs, cur_bb);
         if (cur_bb) {
-            TCGBasicBlock *bb = s->basic_blocks + next_op->bb;
+//            TCGBasicBlock *bb = s->basic_blocks + next_op->bb;
             for (i = 0; i < s->nb_temps; i++) {
                 TCGTemp *ts = s->temps + i;
-                if (bb->prealloc_temps_before[i] >= 0 && !s->temps[i].fixed_reg &&
-                        s->temps[i].val_type != TEMP_VAL_DEAD && s->temps[i].reg != bb->prealloc_temps_before[i]) {
+                if (cur_bb->prealloc_temps_after[i] >= 0 && !s->temps[i].fixed_reg &&
+                        s->temps[i].val_type != TEMP_VAL_DEAD && s->temps[i].reg != cur_bb->prealloc_temps_after[i]) {
                     fprintf(stderr, "Next BB: temp[%d]{state = %d, mc = %d}.prealloc reg = %d (temp_reg = %d)\n",
                             i, s->temps[i].val_type, ts->mem_coherent,
-                            bb->prealloc_temps_before[i], s->temps[i].reg);
+                            cur_bb->prealloc_temps_after[i], s->temps[i].reg);
                     int idx = i;
-                    int reg = bb->prealloc_temps_before[idx];
-                    chain_unwind(s, ts, reg, bb, i_allocated_regs);
+                    int reg = cur_bb->prealloc_temps_after[idx];
+                    chain_unwind(s, ts, reg, cur_bb, i_allocated_regs);
                 }
             }
             for(i = 0; i < s->nb_temps; i++) {
                 TCGTemp *ts = s->temps + i;
                 if (is_jmp_cond &&
                         cur_bb->prealloc_temps_before[i] < 0 &&
-                        bb->prealloc_temps_before[i] >= 0 &&
+                        cur_bb->prealloc_temps_after[i] >= 0 &&
                         ts->val_type == TEMP_VAL_MEM && !ts->fixed_reg) {
                     TCGTemp *t1 = s->reg_to_temp[cur_bb->prealloc_temps_after[i]];
                     int idx = t1 ? temp_idx(t1) : -1;
@@ -4831,14 +4831,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
     atomic_set(&prof->opt_time, prof->opt_time + profile_getclock());
     atomic_set(&prof->la_time, prof->la_time - profile_getclock());
 #endif
-//    for(oi = s->gen_op_buf[0].next; oi != 0; oi = s->gen_op_buf[oi].next) {
-//        TCGOpDef *def = &tcg_op_defs[s->gen_op_buf[oi].opc];
-//        if (def->flags & TCG_OPF_SIDE_EFFECTS) {
-//            s->side_effects = 1;
-//            tb->side_eff = 1;
-//            break;
-//        }
-//    }{
+
     tcg_build_cfg(s, tb);
     liveness_pass_0(s, tb);
     tcg_global_reg_alloc(s);
@@ -4935,7 +4928,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
                                 bb->prealloc_temps_before[i], s->temps[i].reg);
                         int idx = i;
                         int reg = bb->prealloc_temps_before[idx];
-                        chain_unwind(s, ts, reg, bb, s->reserved_regs);
+                        chain_unwind(s, ts, reg, bb-1, s->reserved_regs);
                     }
                 }
             } else {
@@ -5006,10 +4999,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb)
             if (bb - s->basic_blocks < s->bb_count) {
                 for(i = 0; i < s->nb_temps; i++) {
                     TCGTemp *ts = s->temps + i;
-                    if(/*(tb->pc == 0x4000a6b5d7 ||
-                            tb->pc == 0x4000b07380 ||
-                            tb->pc == 0x4000b07460)
-                        && */cur_bb->prealloc_temps_after[i] >= 0 &&
+                    if(cur_bb->prealloc_temps_after[i] >= 0 &&
                             ts->val_type == TEMP_VAL_CONST) {
                         fprintf(stderr, "BB end: sync const on temp %d on reg %d\n",
                                 i, ts->reg);
