@@ -2753,13 +2753,15 @@ static void do_resolve_jumps(DisasContext *s)
                 } else {
 //                    int cur_idx = tcg_ctx->gen_next_op_idx;
 //                    gen_jcc1(s, s->jumps_to_resolve[i].b, s->jumps_to_resolve[i].l);
-                    int prev_idx = tcg_ctx->gen_op_buf[0].prev;
+                    int prev_idx = patch_prev > 0 ? patch_prev : tcg_ctx->gen_op_buf[0].prev;
 //                    TCGOp *prev_op = &tcg_ctx->gen_op_buf[prev_idx];
 //                    prev_op->next = tcg_ctx->gen_next_op_idx;
                     gen_set_label(s->jumps_to_resolve[i].l);
                     fprintf(stderr, "Setting op %d prev to %d\n", tcg_ctx->gen_next_op_idx-1, prev_idx);
                     tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx-1].prev = prev_idx;
                     gen_goto_tb(s, s->jumps_to_resolve[i].exit, s->jumps_to_resolve[i].pc);
+                    patch_prev = tcg_ctx->gen_next_op_idx-1;
+                    tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx].prev = tcg_ctx->gen_next_op_idx-1;
 //                    tcg_ctx->gen_op_buf[tcg_ctx->gen_op_buf[0].prev].next = 0;
 //                    patch_prev = op_insert_after(s->jumps_to_resolve[i].place, cur_idx, tcg_ctx->gen_next_op_idx-1, patch_prev);
                 }
