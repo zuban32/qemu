@@ -2264,8 +2264,8 @@ static inline void gen_jcc(DisasContext *s, int b,
 
     if (s->jmp_opt) {
         l1 = gen_new_label();
-        fprintf(stderr, "Jcc to %lx; cur_jumps %d -> %d\n", val, s->cur_jumps,
-                s->cur_jumps-1);
+//        fprintf(stderr, "Jcc to %lx; cur_jumps %d -> %d\n", val, s->cur_jumps,
+//                s->cur_jumps-1);
         s->cur_jumps--;
         gen_jcc1(s, b, l1);
 //        fprintf(stderr, "cur_jumps = %d\n", s->cur_jumps);
@@ -2884,12 +2884,12 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
         if (s->pc < s->base.tb->min_pc) {
             s->base.tb->min_pc = s->pc;
         }
-        fprintf(stderr, "Jmp to %lx; cur_jumps %d -> %d\n", s->cs_base+eip, s->cur_jumps,
-                s->cur_jumps-1);
+//        fprintf(stderr, "Jmp to %lx; cur_jumps %d -> %d\n", s->cs_base+eip, s->cur_jumps,
+//                s->cur_jumps-1);
         s->cur_jumps--;
         if (s->cur_jumps < 0 || crosses_page(s, s->cs_base+eip)) {
-            fprintf(stderr, "Finishing TB: cj = %d, cp = %d\n", s->cur_jumps,
-                    crosses_page(s, s->cs_base+eip));
+//            fprintf(stderr, "Finishing TB: cj = %d, cp = %d\n", s->cur_jumps,
+//                    crosses_page(s, s->cs_base+eip));
             gen_goto_tb(s, s->cur_exit++, eip);
             gen_eob(s);
         } else if (eip != s->base.pc_next - s->cs_base && !tb_num) {
