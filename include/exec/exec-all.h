@@ -322,7 +322,7 @@ struct tb_tc {
 struct TranslationBlock {
     target_ulong pc;   /* simulated PC corresponding to this block (EIP + CS base) */
 #ifdef ENABLE_BIG_TB
-#define MAX_INNER_JUMPS 6
+#define MAX_INNER_JUMPS 2
 #else
 #define MAX_INNER_JUMPS 0
 #endif
