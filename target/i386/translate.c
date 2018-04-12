@@ -2277,25 +2277,12 @@ static inline void gen_jcc(DisasContext *s, int b,
             gen_set_label(l1);
             gen_goto_tb(s, s->cur_exit++, val);
             s->base.is_jmp = DISAS_NORETURN;
-//            do_resolve_jumps(s);
-//            gen_eob(s);
         } else {
-            s->base.tb->need_cfg = 1;
             s->jumps_to_resolve[s->cur_jump_to_resolve].pc = val;
-//            s->jumps_to_resolve[s->cur_jump_to_resolve].tb = s->cur_exit++;
-//            gen_jcc1(s, b^1, l1);
             s->jumps_to_resolve[s->cur_jump_to_resolve].exit = s->cur_exit++;
             s->jumps_to_resolve[s->cur_jump_to_resolve].place = tcg_ctx->gen_next_op_idx-1;
             s->jumps_to_resolve[s->cur_jump_to_resolve++].l = l1;
-//            gen_goto_tb(s, s->cur_exit++, val);
-//            gen_set_label(l1);
         }
-//        s->cur_exit += 2;
-#ifdef ENABLE_BIG_TB
-//        if (--s->cur_jumps < 0) {
-//            s->base.is_jmp = DISAS_NORETURN;
-//        }
-#endif
     } else {
         l1 = gen_new_label();
 #ifdef ENABLE_BIG_TB
@@ -2695,9 +2682,10 @@ static void do_resolve_jumps(DisasContext *s)
     if(!s->jmp_opt) {
         tcg_gen_br(exit_l);
     }
-    if(!s->jumps_resolved && s->base.tb->need_cfg) {
+    if(!s->jumps_resolved) {
         s->jumps_resolved = true;
         int patch_prev = -1;
+        int num_resolved = 0;
 #ifdef DEBUG_BIG_TB
         fprintf(stderr, "Resolving %d jumps...\n", s->cur_jump_to_resolve);
 #endif
@@ -2717,10 +2705,13 @@ static void do_resolve_jumps(DisasContext *s)
 //                    }
                     s->base.tb->patch_end = true;
                     gen_set_label(l);
+                    int start_idx = tcg_ctx->gen_next_op_idx-1;
                     TCGOp *cur_op = &tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx-1];
+#ifndef CONFIG_LINUX_USER
+                    gen_tb_start(s->base.tb);
+#endif
                     tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx].prev = cur_op->prev;
 
-//                    gen_tb_start(s->base.tb);
                     int label_idx = tcg_ctx->gen_next_op_idx - 1;
                     int target_idx = s->instr_gen_code[j].op_idx;
 //                    if (!s->jmp_opt) {
@@ -2730,7 +2721,7 @@ static void do_resolve_jumps(DisasContext *s)
 ////                        tcg_gen_br(l);
 //                    }
 
-                    patch_prev = op_insert_after(target_idx, label_idx, label_idx, patch_prev);
+                    patch_prev = op_insert_after(target_idx, start_idx, label_idx, patch_prev);
 
 //                    if (s->jmp_opt) {
 //                        int cur_idx = tcg_ctx->gen_next_op_idx-1;
@@ -2738,12 +2729,13 @@ static void do_resolve_jumps(DisasContext *s)
 //                    } else {
 //                        tcg_ctx->gen_next_op_idx--;
 //                    }
-
+//                    s->base.tb->need_cfg = 1;
 #ifdef DEBUG_BIG_TB
                     fprintf(stderr, "Resolved jump to %lx\n", s->jumps_to_resolve[i].pc);
 #endif
                     found = true;
                     s->instr_gen_code[j].op_idx = label_start_idx;
+                    num_resolved++;
                     break;
                 }
             }
@@ -2774,6 +2766,9 @@ static void do_resolve_jumps(DisasContext *s)
 //                    patch_prev = op_insert_after(s->jumps_to_resolve[i].place, cur_idx, tcg_ctx->gen_next_op_idx-1, patch_prev);
                 }
             }
+        }
+        if(num_resolved > 1 && s->base.num_insns < 70 * MAX_INNER_JUMPS) {
+            s->base.tb->need_cfg = 1;
         }
     }
     if(!s->jmp_opt) {
@@ -2910,8 +2905,7 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
                 s->base.tb->min_pc = s->pc;
             }
         } else {
-            do_resolve:
-            s->base.tb->need_cfg = 1;
+            do_resolve:{
             TCGLabel *l = gen_new_label();
             tcg_gen_br(l);
             // case of "repz <op>" instruction needs jumps resolution instead
@@ -2919,6 +2913,7 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
             s->jumps_to_resolve[s->cur_jump_to_resolve].pc = eip;
             s->jumps_to_resolve[s->cur_jump_to_resolve].l = l;
             s->jumps_to_resolve[s->cur_jump_to_resolve++].exit = s->cur_exit++;
+            }
         }
     } else {
         s->cur_jumps--;
