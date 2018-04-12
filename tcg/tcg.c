@@ -2944,7 +2944,7 @@ static inline bool check_addr(target_ulong addr, TranslationBlock *tb)
 }
 //#endif
 
-#ifdef GLOBAL_REG_ALLOC
+//#ifdef GLOBAL_REG_ALLOC
 static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
 {
 //    qemu_log("Building CFG for cur TB...\n");
@@ -2958,18 +2958,9 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
     TCGEdge *edge;
     TCGBasicBlock *bb;
 
-    int labels[2 * MAX_INNER_JUMPS + 1] = {-1};
-    memset(labels, -1, (2 * MAX_INNER_JUMPS + 1) * sizeof(*labels));
-    int jumps[MAX_INNER_JUMPS+1] = {-1};
-    memset(jumps, -1, (MAX_INNER_JUMPS + 1) * sizeof(*jumps));
-    int cur_jmp = 0;
-
     for (oi = s->gen_op_buf[0].next; oi != 0; oi = oi_next) {
-//        fprintf(stderr, "op %d", oi);
-//        int i, nb_iargs, nb_oargs;
         TCGOp * const op = &s->gen_op_buf[oi];
         TCGOpcode opc = op->opc;
-        const TCGOpDef *def = &tcg_op_defs[opc];
 
         oi_next = op->next;
         next_insn_is_bb_start = 0;
@@ -2981,9 +2972,6 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
             }
             break;
         case INDEX_op_set_label:
-//            cur_insn_is_bb_start = 1;
-            fprintf(stderr, "labels[%d] = %d\n", arg_label(op->args[0])->id, oi);
-            labels[arg_label(op->args[0])->id] = oi;
             label_to_bb[arg_label(op->args[0])->id] = bb_count-1;
             break;
         case INDEX_op_brcond_i32:
@@ -2992,13 +2980,6 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
 #else
         case INDEX_op_brcond_i64:
 #endif
-            fprintf(stderr, "Jump %d at %d to L%d\n", cur_jmp, oi, arg_label(op->args[def->nb_args - 1])->id);
-            fprintf(stderr, "Labels[%d] = %d\n", arg_label(op->args[def->nb_args - 1])->id,
-                    labels[arg_label(op->args[def->nb_args - 1])->id]);
-            if (labels[arg_label(op->args[def->nb_args - 1])->id] == -1) {
-                jumps[cur_jmp++] = arg_label(op->args[def->nb_args - 1])->id;
-                fprintf(stderr, "Jumps %d = %d\n", cur_jmp-1, jumps[cur_jmp-1]);
-            }
         case INDEX_op_br:
         case INDEX_op_goto_tb:
         case INDEX_op_exit_tb:
@@ -3166,14 +3147,18 @@ static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
             }
         }
     }
-}
-#else
-static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
-{
-    s->bb_count = 0;
+#ifndef GLOBAL_REG_ALLOC
     s->basic_blocks = NULL;
-}
+    s->bb_count = 0;
 #endif
+}
+//#else
+//static void tcg_build_cfg(TCGContext *s, TranslationBlock *tb)
+//{
+//    s->bb_count = 0;
+//    s->basic_blocks = NULL;
+//}
+//#endif
 
 #if 0
 static void tcg_traverse_reg_chain(TCGContext *s, int *temp_to_reg,
@@ -3733,19 +3718,6 @@ static void temp_sync(TCGContext *s, TCGTemp *ts,
 static inline void temp_dead(TCGContext *s, TCGTemp *ts)
 {
     fprintf(stderr, "Temp %lu dead (state=%d)\n", temp_idx(ts), ts->val_type);
-//    if (
-////            (s->tb->pc == 0x401c30
-////            || s->tb->pc == 0x401c60
-////            || s->tb->pc == 0x408da6
-////            || s->tb->pc == 0x408db3
-////            || s->tb->pc == 0x408d92
-////            || s->tb->pc == 0x408870) &&
-//            s->cur_bb && !ts->fixed_reg
-//            && prev_opc == INDEX_op_set_label
-////            && s->gen_op_buf[s->gen_op_buf[s->cur_bb->first_insn].next].opc == INDEX_op_set_label
-//            && s->cur_bb->prealloc_temps_before[temp_idx(ts)] >= 0 && ts->val_type == TEMP_VAL_REG) {
-//        tcg_out_st(s, ts->type, ts->reg, ts->mem_base->reg, ts->mem_offset);
-//    }
     temp_free_or_dead(s, ts, 1);
 }
 
@@ -3761,9 +3733,15 @@ static inline void temp_dead1(TCGContext *s, TCGTemp *ts, int prev)
 //            || s->tb->pc == 0x408870) &&
             s->cur_bb && !ts->fixed_reg
 //            && s->gen_op_buf[prev].opc == INDEX_op_set_label
-            && s->gen_op_buf[s->gen_op_buf[s->cur_bb->first_insn].next].opc == INDEX_op_set_label
             && !ts->mem_coherent
-            && s->cur_bb->prealloc_temps_before[temp_idx(ts)] >= 0 && ts->val_type == TEMP_VAL_REG) {
+//            && s->gen_op_buf[s->gen_op_buf[s->cur_bb->first_insn].next].opc == INDEX_op_set_label
+//            &&( s->gen_op_buf[s->cur_bb->last_insn].opc == INDEX_op_br
+//            || s->gen_op_buf[s->cur_bb->last_insn].opc == INDEX_op_brcond_i32
+//            || s->gen_op_buf[s->cur_bb->last_insn].opc == INDEX_op_brcond_i64)
+            && s->cur_bb->prealloc_temps_before[temp_idx(ts)] >= 0
+//            && s->cur_bb->prealloc_temps_after[temp_idx(ts)] >= 0
+            && ts->val_type == TEMP_VAL_REG) {
+//        assert(s->cur_bb->last_insn > 0);
         tcg_out_st(s, ts->type, ts->reg, ts->mem_base->reg, ts->mem_offset);
     }
     temp_free_or_dead(s, ts, 1);
