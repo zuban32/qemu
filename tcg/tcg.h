@@ -557,7 +557,7 @@ struct TCGBasicBlock {
     int prealloc_temps_before[TCG_MAX_TEMPS];
     int prealloc_temps_after[TCG_MAX_TEMPS];
 
-    int first_id;
+    int sync_begin[TCG_MAX_TEMPS];
 };
 
 typedef enum TCGTempVal {
@@ -597,7 +597,6 @@ typedef struct TCGTemp {
     uintptr_t state;
     void *state_ptr;
     TCGTempVal prev_val;
-    int do_st;
 } TCGTemp;
 
 typedef struct TCGContext TCGContext;
@@ -663,6 +662,7 @@ typedef struct TCGProfile {
     int64_t table_op_count[NB_OPS];
     int64_t ld_count;
     int64_t st_count;
+    int64_t gra_time;
 } TCGProfile;
 
 struct TCGContext {
