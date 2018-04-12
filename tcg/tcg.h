@@ -541,6 +541,7 @@ struct TCGEdge {
 };
 
 struct TCGBasicBlock {
+    int id;
     int first_insn;
     int first_arg;
     int last_insn;
@@ -555,6 +556,8 @@ struct TCGBasicBlock {
 
     int prealloc_temps_before[TCG_MAX_TEMPS];
     int prealloc_temps_after[TCG_MAX_TEMPS];
+
+    int first_id;
 };
 
 typedef enum TCGTempVal {
@@ -594,6 +597,7 @@ typedef struct TCGTemp {
     uintptr_t state;
     void *state_ptr;
     TCGTempVal prev_val;
+    int do_st;
 } TCGTemp;
 
 typedef struct TCGContext TCGContext;
@@ -683,6 +687,8 @@ struct TCGContext {
     TCGTemp *frame_temp;
 
     tcg_insn_unit *code_ptr;
+
+    TranslationBlock *tb;
 
 #ifdef CONFIG_PROFILER
     TCGProfile prof;
