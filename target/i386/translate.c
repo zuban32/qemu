@@ -100,14 +100,13 @@ typedef struct instr_gen_place {
 } instr_gen_place;
 
 typedef struct jump_to_resolve {
-    target_ulong pc;
+    target_ulong target_pc;
+    target_ulong jmp_pc;
     TCGLabel *l;
     CCOp cc_op;
     bool cc_op_dirty;
     int place;
     int exit;
-    int rstart;
-    int rend;
 } jump_to_resolve;
 
 typedef struct tb_region {
@@ -2278,9 +2277,10 @@ static inline void gen_jcc(DisasContext *s, int b,
             gen_goto_tb(s, s->cur_exit++, val);
             s->base.is_jmp = DISAS_NORETURN;
         } else {
-            s->jumps_to_resolve[s->cur_jump_to_resolve].pc = val;
+            s->jumps_to_resolve[s->cur_jump_to_resolve].target_pc = val;
             s->jumps_to_resolve[s->cur_jump_to_resolve].exit = s->cur_exit++;
             s->jumps_to_resolve[s->cur_jump_to_resolve].place = tcg_ctx->gen_next_op_idx-1;
+            s->jumps_to_resolve[s->cur_jump_to_resolve].jmp_pc = s->pc;
             s->jumps_to_resolve[s->cur_jump_to_resolve++].l = l1;
         }
     } else {
@@ -2305,10 +2305,11 @@ static inline void gen_jcc(DisasContext *s, int b,
             s->jumps_to_resolve[s->cur_jump_to_resolve].cc_op = s->cc_op;
             gen_jcc1(s, b, l1);
             s->cur_jumps--;
-            s->jumps_to_resolve[s->cur_jump_to_resolve].pc = val;
+            s->jumps_to_resolve[s->cur_jump_to_resolve].target_pc = val;
+            s->jumps_to_resolve[s->cur_jump_to_resolve].jmp_pc = s->pc;
             s->jumps_to_resolve[s->cur_jump_to_resolve++].l = l1;
 #ifdef DEBUG_BIG_TB
-            fprintf(stderr, "Adding jcc at %lx(-1 instr) to %lx for resolution\n", s->pc, val);
+            fprintf(stderr, "Adding jcc at %lx(-1 instr) to %lx for resolution\n", s->target_pc, val);
 #endif
         }
         s->met_br = true;
@@ -2691,11 +2692,11 @@ static void do_resolve_jumps(DisasContext *s)
 #endif
         for(int i = 0; i < s->cur_jump_to_resolve; i++) {
 #ifdef DEBUG_BIG_TB
-            fprintf(stderr, "Resolving jump to %lx...\n", s->jumps_to_resolve[i].pc);
+            fprintf(stderr, "Resolving jump to %lx...\n", s->jumps_to_resolve[i].target_pc);
 #endif
             bool found = false;
             for(int j = 0; j < s->cur_instr_code; j++) {
-                if (s->instr_gen_code[j].pc == s->jumps_to_resolve[i].pc) {
+                if (s->instr_gen_code[j].pc == s->jumps_to_resolve[i].target_pc) {
                     int label_start_idx = tcg_ctx->gen_next_op_idx;
                     TCGLabel *l;
 //                    if (!s->jmp_opt) {
@@ -2720,6 +2721,13 @@ static void do_resolve_jumps(DisasContext *s)
 ////                        gen_jcc1(s, s->jumps_to_resolve[i].b, s->jumps_to_resolve[i].l);
 ////                        tcg_gen_br(l);
 //                    }
+//                    printf("Jumps resolved from %lx to %lx\n",
+//                            s->jumps_to_resolve[i].jmp_pc,
+//                            s->jumps_to_resolve[i].target_pc);
+//                    if (s->jumps_to_resolve[i].target_pc < s->jumps_to_resolve[i].jmp_pc) {
+////                        printf("Potential loop found\n");
+                        s->base.tb->need_cfg = 1;
+//                    }
 
                     patch_prev = op_insert_after(target_idx, start_idx, label_idx, patch_prev);
 
@@ -2731,7 +2739,7 @@ static void do_resolve_jumps(DisasContext *s)
 //                    }
 //                    s->base.tb->need_cfg = 1;
 #ifdef DEBUG_BIG_TB
-                    fprintf(stderr, "Resolved jump to %lx\n", s->jumps_to_resolve[i].pc);
+                    fprintf(stderr, "Resolved jump to %lx\n", s->jumps_to_resolve[i].target_pc);
 #endif
                     found = true;
                     s->instr_gen_code[j].op_idx = label_start_idx;
@@ -2746,7 +2754,7 @@ static void do_resolve_jumps(DisasContext *s)
                 if (!s->jmp_opt) {
     //                gen_tb_start(s->base.tb);
                     gen_set_label(s->jumps_to_resolve[i].l);
-                    gen_jmp_im(s->jumps_to_resolve[i].pc);
+                    gen_jmp_im(s->jumps_to_resolve[i].target_pc);
                     s->cc_op_dirty = s->jumps_to_resolve[i].cc_op_dirty;
                     s->cc_op = s->jumps_to_resolve[i].cc_op;
                     tcg_gen_br(exit_l);
@@ -2759,7 +2767,7 @@ static void do_resolve_jumps(DisasContext *s)
                     gen_set_label(s->jumps_to_resolve[i].l);
 //                    fprintf(stderr, "Setting op %d prev to %d\n", tcg_ctx->gen_next_op_idx-1, prev_idx);
                     tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx-1].prev = prev_idx;
-                    gen_goto_tb(s, s->jumps_to_resolve[i].exit, s->jumps_to_resolve[i].pc);
+                    gen_goto_tb(s, s->jumps_to_resolve[i].exit, s->jumps_to_resolve[i].target_pc);
                     patch_prev = tcg_ctx->gen_next_op_idx-1;
                     tcg_ctx->gen_op_buf[tcg_ctx->gen_next_op_idx].prev = tcg_ctx->gen_next_op_idx-1;
 //                    tcg_ctx->gen_op_buf[tcg_ctx->gen_op_buf[0].prev].next = 0;
@@ -2767,9 +2775,10 @@ static void do_resolve_jumps(DisasContext *s)
                 }
             }
         }
-        if(num_resolved > 1 && s->base.num_insns < 70 * MAX_INNER_JUMPS) {
-            s->base.tb->need_cfg = 1;
-        }
+//        s->base.tb->need_cfg &= (s->base.tb->pc >> 24) == 0;;// (num_resolved > 2);
+//        if(!s->base.tb->need_cfg && num_resolved > 2 && s->base.num_insns < 70 * MAX_INNER_JUMPS) {
+//            s->base.tb->need_cfg = 1;
+//        }
     }
     if(!s->jmp_opt) {
         gen_set_label(exit_l);
@@ -2910,8 +2919,9 @@ static void gen_jmp_tb(DisasContext *s, target_ulong eip, int tb_num)
             tcg_gen_br(l);
             // case of "repz <op>" instruction needs jumps resolution instead
             s->jumps_to_resolve[s->cur_jump_to_resolve].place = tcg_ctx->gen_next_op_idx-1;
-            s->jumps_to_resolve[s->cur_jump_to_resolve].pc = eip;
+            s->jumps_to_resolve[s->cur_jump_to_resolve].target_pc = eip;
             s->jumps_to_resolve[s->cur_jump_to_resolve].l = l;
+            s->jumps_to_resolve[s->cur_jump_to_resolve].jmp_pc = s->pc;
             s->jumps_to_resolve[s->cur_jump_to_resolve++].exit = s->cur_exit++;
             }
         }

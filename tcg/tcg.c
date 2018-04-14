@@ -2130,7 +2130,6 @@ static void liveness_pass_0(TCGContext *s)
 
         TCGOp * const op = &s->gen_op_buf[oi];
         TCGOpcode opc = op->opc;
-        bool is_discard = opc==INDEX_op_discard;
         const TCGOpDef *def = &tcg_op_defs[opc];
 
         oi_prev = op->prev;
@@ -2355,40 +2354,34 @@ static void liveness_pass_0(TCGContext *s)
                     //                    arg = op->args[i];
                     arg_ts = arg_temp(op->args[i]);
                     long idx = temp_idx(arg_ts);
-                    if (!is_discard) {
-                        if ((arg_ts->state & TS_DEAD) && idx >= s->nb_globals
-                                && !arg_ts->temp_local) {
-                            reg_pressure++;
-                        }
-                        if (bb && idx < s->nb_globals) {
-                            set_bit(idx, bb->used_temps);
-                        }
+                    if ((arg_ts->state & TS_DEAD) && idx >= s->nb_globals
+                            && !arg_ts->temp_local) {
+                        reg_pressure++;
+                    }
+                    if (bb && idx < s->nb_globals) {
+                        set_bit(idx, bb->used_temps);
                     }
                 }
-                if (!is_discard) {
-                    if (def->flags & TCG_OPF_CALL_CLOBBER) {
-                        if (bb && bb->max_reg_pressure <
-                                reg_pressure + nb_call_clobber) {
-                            bb->max_reg_pressure = reg_pressure + nb_call_clobber;
-                        }
-                    } else {
-                        if (bb && bb->max_reg_pressure < reg_pressure) {
-                            bb->max_reg_pressure = reg_pressure;
-                        }
+                if (def->flags & TCG_OPF_CALL_CLOBBER) {
+                    if (bb && bb->max_reg_pressure <
+                            reg_pressure + nb_call_clobber) {
+                        bb->max_reg_pressure = reg_pressure + nb_call_clobber;
+                    }
+                } else {
+                    if (bb && bb->max_reg_pressure < reg_pressure) {
+                        bb->max_reg_pressure = reg_pressure;
                     }
                 }
                 for (i = 0; i < nb_oargs; i++) {
                     //                    arg = op->args[i];
                     arg_ts = arg_temp(op->args[i]);
                     long idx = temp_idx(arg_ts);
-                    if (!is_discard) {
-                        if (!(arg_ts->state & TS_DEAD) && idx >= s->nb_globals
-                                && !arg_ts->temp_local) {
-                            reg_pressure--;
-                        }
-                        if (bb && idx < s->nb_globals) {
-                            set_bit(idx, bb->used_temps);
-                        }
+                    if (!(arg_ts->state & TS_DEAD) && idx >= s->nb_globals
+                            && !arg_ts->temp_local) {
+                        reg_pressure--;
+                    }
+                    if (bb && idx < s->nb_globals) {
+                        set_bit(idx, bb->used_temps);
                     }
                 }
                 /* output args are dead */
